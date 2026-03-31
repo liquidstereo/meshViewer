@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+input/mesh/
+input/sequence/
+input/texture/
+input/cache/
+output/
+logs/
+*.log
+.claude/
+_backup/
+_tmp/
+_aex/
+assets/hdri/*.hdr
