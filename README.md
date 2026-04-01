@@ -208,17 +208,17 @@ All defaults are defined in `configs/defaults.py` and `configs/keybinding.py`.
 
 | Key | Action |
 |---|---|
-| `r` / `KP_0` | Camera reset |
-| `KP_5` | Center focal point on mesh |
+| `r` / `Numpad 0` | Camera reset |
+| `Numpad 5` | Center focal point on mesh |
 | `c` | Parallel ↔ Perspective projection |
 | `F1` / `F2` / `F3` / `F4` | Front / Back / Top / Side view |
-| `KP_7` / `KP_9` | Zoom in / out |
-| `KP_1` / `KP_3` | Dolly in / out |
-| `KP_4` / `KP_6` | Rotate around Y axis |
-| `KP_2` / `KP_8` | Rotate around X axis |
-| `Ctrl+KP_4/6` | Truck left / right |
-| `Ctrl+KP_2/8` | Pedestal down / up |
-| `KP_.` | Auto-turntable toggle |
+| `Numpad 7` / `Numpad 9` | Zoom in / out |
+| `Numpad 1` / `Numpad 3` | Dolly in / out |
+| `Numpad 4` / `Numpad 6` | Rotate around Y axis |
+| `Numpad 2` / `Numpad 8` | Rotate around X axis |
+| `Ctrl+Numpad 4/6` | Truck left / right |
+| `Ctrl+Numpad 2/8` | Pedestal down / up |
+| `Numpad .` | Auto-turntable toggle |
 
 ### Render Modes
 
@@ -246,7 +246,7 @@ All defaults are defined in `configs/defaults.py` and `configs/keybinding.py`.
 | `b` | Backface culling / mesh occluder toggle |
 | `Tab` | Cycle actor visibility |
 | `PgUp` / `PgDn` | Axis cycle (CAM → Z → Y → X) |
-| `KP_+` / `KP_-` | Mode parameter increment / decrement |
+| `Numpad +` / `Numpad -` | Mode parameter increment / decrement |
 | `/` | Toggle all overlays |
 | `h` | Help overlay |
 
