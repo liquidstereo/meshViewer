@@ -14,18 +14,14 @@ A PyVista/VTK-based interactive 3D mesh viewer built on OpenGL, supporting stati
 
 ## Requirements
 
-- **Python** 3.10+
-- **Miniconda** (required — VTK must be installed via conda-forge, not pip)
+- [Python 3.10+](https://www.python.org/downloads/)
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
 
 ---
 
 ## Usage
 
 ### Installation
-
-#### Prerequisites
-- [Python 3.10+](https://www.python.org/downloads/)
-- [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
 
 #### Setup Instructions
 
