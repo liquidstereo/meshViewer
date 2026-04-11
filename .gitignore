@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+input/mesh/
+input/sequence/
+input/texture/
+input/cache/
+output/
+logs/
+*.log
+assets/hdri/*.hdr
