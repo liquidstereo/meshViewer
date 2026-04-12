@@ -347,24 +347,25 @@ def convert(input_path: str, swap_yz: bool, n_workers: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='PLY → OBJ 변환 (포인트 클라우드: 텍스처 아틀라스 포함)'
+        description='Convert PLY to OBJ format '
+                    '(point cloud: includes texture atlas)'
     )
     parser.add_argument(
         '-i', '--input', required=True,
-        help='단일 PLY 파일 또는 PLY 시퀀스 디렉토리',
+        help='Single PLY file or directory of PLY sequence',
     )
     parser.add_argument(
         '--keep-axis', action='store_true', default=False,
-        help='Y-Z 축 스왑 없이 원본 좌표 유지',
+        help='Keep original coordinates without Y-Z axis swap',
     )
     parser.add_argument(
         '-j', '--workers', type=int, default=DEFAULT_WORKERS,
         metavar='N',
-        help=f'병렬 워커 수 (기본값: {DEFAULT_WORKERS})',
+        help=f'Number of parallel workers (default: {DEFAULT_WORKERS})',
     )
     parser.add_argument(
         '-v', '--verbose', action='store_true',
-        help='DEBUG 레벨 로그 출력',
+        help='Enable DEBUG level logging',
     )
     return parser.parse_args()
 
