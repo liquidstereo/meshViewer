@@ -4,7 +4,9 @@ import time
 import hashlib
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor, ProcessPoolExecutor, as_completed,
+)
 
 import numpy as np
 import pyvista as pv
@@ -34,15 +36,16 @@ _UV_CANDIDATE_NAMES = (
 
 _GLTF_EXTS = {'.glb', '.gltf'}
 
-def _npz_path(obj_path, npz_dir):
+def _frame_cache_dir(obj_path, npz_dir):
     name = os.path.basename(obj_path)
     base, ext = os.path.splitext(name)
-    return os.path.join(npz_dir, f'{base}_{ext[1:]}.npz')
+    return os.path.join(npz_dir, f'{base}_{ext[1:]}')
 
-def _is_cache_stale(src_path: str, npz_path: str) -> bool:
-    if not os.path.exists(npz_path):
+def _is_cache_stale(src_path: str, frame_dir: str) -> bool:
+    sentinel = os.path.join(frame_dir, 'points.npy')
+    if not os.path.exists(sentinel):
         return True
-    return os.path.getmtime(src_path) > os.path.getmtime(npz_path)
+    return os.path.getmtime(src_path) > os.path.getmtime(sentinel)
 
 def _fix_gltf_v_flip(mesh: 'pv.PolyData') -> None:
     tc = mesh.active_texture_coordinates
@@ -95,19 +98,49 @@ def _build_single_npz(obj_path, npz_dir):
     _log = logging.getLogger(__name__)
     try:
         mesh = _read_as_polydata(obj_path)
-        out = _npz_path(obj_path, npz_dir)
-        arrays = {'points': mesh.points}
+        frame_dir = _frame_cache_dir(obj_path, npz_dir)
+        os.makedirs(frame_dir, exist_ok=True)
         if mesh.faces.size > 0:
-            arrays['faces'] = mesh.faces
+            faces = mesh.faces
+            if int(faces.max()) < np.iinfo(np.int32).max:
+                faces = faces.astype(np.int32)
+            np.save(os.path.join(frame_dir, 'faces.npy'), faces)
         for key in mesh.point_data.keys():
-            arrays[f'pd_{key}'] = mesh.point_data[key]
+            np.save(
+                os.path.join(frame_dir, f'pd_{key}.npy'),
+                mesh.point_data[key],
+            )
         tc = mesh.active_texture_coordinates
         if tc is not None:
-            arrays['tcoords'] = tc
-        np.savez(out, **arrays)
+            np.save(os.path.join(frame_dir, 'tcoords.npy'), tc)
+        np.save(os.path.join(frame_dir, 'points.npy'), mesh.points)
     except Exception as e:
-        _log.error('NPZ build failed [%s]: %s', obj_path, e)
+        _log.error('Frame cache build failed [%s]: %s', obj_path, e)
         raise
+
+def _load_mesh_frame(frame_dir: str) -> 'pv.PolyData':
+    pts = np.array(
+        np.load(os.path.join(frame_dir, 'points.npy'), mmap_mode='r')
+    )
+    faces_path = os.path.join(frame_dir, 'faces.npy')
+    faces = (
+        np.array(np.load(faces_path, mmap_mode='r'))
+        if os.path.exists(faces_path) else None
+    )
+    mesh = pv.PolyData(pts, faces)
+    for fname in sorted(os.listdir(frame_dir)):
+        if not (fname.startswith('pd_') and fname.endswith('.npy')):
+            continue
+        key = fname[3:-4]
+        mesh.point_data[key] = np.array(
+            np.load(os.path.join(frame_dir, fname), mmap_mode='r')
+        )
+    tc_path = os.path.join(frame_dir, 'tcoords.npy')
+    if os.path.exists(tc_path):
+        mesh.active_texture_coordinates = np.array(
+            np.load(tc_path, mmap_mode='r')
+        )
+    return mesh
 
 def _pack_pt_colors(mesh) -> 'np.ndarray | None':
     rgba = mesh.point_data.get('RGBA')
@@ -424,14 +457,16 @@ class FrameBuffer:
         os.makedirs(self._npz_dir, exist_ok=True)
         missing = [
             f for f in self._obj_files
-            if _is_cache_stale(f, _npz_path(f, self._npz_dir))
+            if _is_cache_stale(
+                f, _frame_cache_dir(f, self._npz_dir)
+            )
         ]
         if not missing:
             return
 
         workers = DEFAULT_MESH_WORKERS
         logger.info(
-            'Building NPZ cache: %d stale/missing (workers=%d)...',
+            'Building frame cache: %d stale/missing (workers=%d)...',
             len(missing), workers,
         )
         try:
@@ -443,7 +478,7 @@ class FrameBuffer:
                 elapsed=True, manual=False,
                 enrich_print=True, force_tty=True
             ) as bar:
-                with ThreadPoolExecutor(
+                with ProcessPoolExecutor(
                     max_workers=workers
                 ) as exe:
                     futs = {
@@ -459,13 +494,13 @@ class FrameBuffer:
                             fut.result()
                         except Exception as e:
                             logger.error(
-                                'NPZ cache error [%s]: %s', src, e
+                                'Frame cache error [%s]: %s', src, e
                             )
                             raise
                         bar()
                 bar.title = 'NPZ FILE CACHING COMPLETE'
         except KeyboardInterrupt:
-            logger.warning('NPZ cache build interrupted.')
+            logger.warning('Frame cache build interrupted.')
             self.cleanup()
             raise
 
@@ -474,10 +509,10 @@ class FrameBuffer:
         if self._no_cache:
             mesh = _read_as_polydata(obj_path)
         else:
-            npz = _npz_path(obj_path, self._npz_dir)
+            frame_dir = _frame_cache_dir(obj_path, self._npz_dir)
             mesh = (
-                self._load_mesh_npz(npz)
-                if os.path.exists(npz)
+                _load_mesh_frame(frame_dir)
+                if os.path.isdir(frame_dir)
                 else _read_as_polydata(obj_path)
             )
         if mesh.n_faces_strict > AUTO_DECIMATE_THRESHOLD:
@@ -523,21 +558,6 @@ class FrameBuffer:
             _rgb = _pack_pt_colors(mesh)
             if _rgb is not None:
                 mesh.point_data['_rgb_packed'] = _rgb
-        return mesh
-
-    def _load_mesh_npz(self, npz_path):
-        data = np.load(npz_path, mmap_mode='r')
-        mesh = pv.PolyData(
-            np.array(data['points']),
-            np.array(data['faces']) if 'faces' in data else None,
-        )
-        for key in data.files:
-            if key.startswith('pd_'):
-                mesh.point_data[key[3:]] = np.array(data[key])
-        if 'tcoords' in data.files:
-            mesh.active_texture_coordinates = np.array(
-                data['tcoords']
-            )
         return mesh
 
     def _load_texture(self, idx):
