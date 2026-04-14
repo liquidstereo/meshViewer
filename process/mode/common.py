@@ -4,7 +4,7 @@ import pyvista as pv
 import matplotlib.cm as cm
 from vtk.util.numpy_support import numpy_to_vtk
 
-from configs.defaults import COLOR_BG, OFFSET_MESH_BACK
+from configs.settings import COLOR_BG, OFFSET_MESH_BACK
 
 def _get_cam_dir(plotter) -> np.ndarray:
     cam_pos = np.array(plotter.camera.position)

@@ -2,9 +2,9 @@ import time
 import logging
 import vtk
 
-import configs.defaults as _cfg
+import configs.settings as _cfg
 
-from configs.defaults import (
+from configs.settings import (
     WIDTH_ISO_LINE, TYPE_TUBE, COLOR_ISO_LINE,
     COLOR_WIREFRAME, WIDTH_WIREFRAME,
     OFFSET_MESH_BACK,

@@ -5,7 +5,7 @@ import vtk as _vtk
 import matplotlib.cm as _cm
 from vtk.util.numpy_support import numpy_to_vtk
 
-from configs.defaults import (
+from configs.settings import (
     POINT_FOG_START,
     PT_CLOUD_SIZE_DEFAULT,
     PT_CLOUD_SHADER_SCALE,

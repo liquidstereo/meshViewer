@@ -2,9 +2,9 @@ import logging
 import numpy as np
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk
-import configs.defaults as _cfg
+import configs.settings as _cfg
 
-from configs.defaults import (
+from configs.settings import (
     VTX_SPATIAL_INTERVAL, VTX_SCREEN_INTERVAL,
     VTX_LABEL_COLOR,
 )

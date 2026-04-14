@@ -1,7 +1,7 @@
 import os
 import time
 
-from configs.defaults import (
+from configs.settings import (
     DEFAULT_GRID, DEFAULT_BBOX, DEFAULT_BACKFACE, DEFAULT_LIGHTING,
     DEFAULT_TURNTABLE, DEFAULT_COLORBAR,
     EDGE_FEATURE_ANGLE,

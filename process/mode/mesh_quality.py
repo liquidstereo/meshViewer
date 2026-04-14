@@ -4,7 +4,7 @@ import numpy as np
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk
 
-from configs.defaults import MESH_QUALITY_METRIC
+from configs.settings import MESH_QUALITY_METRIC
 
 logger = logging.getLogger(__name__)
 

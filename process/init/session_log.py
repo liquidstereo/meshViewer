@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 
-from configs.defaults import (
+from configs.settings import (
     WINDOW_WIDTH, WINDOW_HEIGHT, TARGET_ANIM_FPS,
     STARTUP_AXIS,
     STARTUP_REVERSE_X_AXIS, STARTUP_REVERSE_Y_AXIS, STARTUP_REVERSE_Z_AXIS,

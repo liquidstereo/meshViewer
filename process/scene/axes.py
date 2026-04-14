@@ -1,7 +1,7 @@
 import pyvista as pv
-import configs.defaults as _cfg
+import configs.settings as _cfg
 
-from configs.defaults import AXIS_COLORS, AXIS_VIEWPORT
+from configs.settings import AXIS_COLORS, AXIS_VIEWPORT
 
 def setup_axes_marker(plotter):
     axes = pv.create_axes_marker()

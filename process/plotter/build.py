@@ -1,7 +1,7 @@
 import logging
 from pyvista.plotting import Plotter
 
-from configs.defaults import (
+from configs.settings import (
     WINDOW_TITLE, WINDOW_MONITOR_INDEX,
     RENDER_MSAA_SAMPLES, RENDER_LINE_SMOOTHING, RENDER_POINT_SMOOTHING,
     TARGET_ANIM_FPS, SAVE_ALPHA,

@@ -3,7 +3,7 @@ import logging
 
 import vtk as _vtk
 
-from configs.defaults import LOG_DIR, LOG_FORMAT, LOG_MSEC_FORMAT
+from configs.settings import LOG_DIR, LOG_FORMAT, LOG_MSEC_FORMAT
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

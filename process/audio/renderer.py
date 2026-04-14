@@ -5,7 +5,7 @@ import pyvista as pv
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk
 
-from configs.defaults import (
+from configs.settings import (
     COLOR_BG,
     RENDER_LINE_SMOOTHING,
     TYPE_TUBE,

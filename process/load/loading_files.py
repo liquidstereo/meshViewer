@@ -14,7 +14,7 @@ from alive_progress import alive_bar
 
 import psutil
 
-from configs.defaults import (
+from configs.settings import (
     DEFAULT_PRELOAD_ALL,
     DEFAULT_WINDOW_SIZE, DEFAULT_PRELOAD_AHEAD,
     PRELOAD_BACK_RATIO, EVICT_MEMORY_THRESHOLD,
@@ -113,6 +113,7 @@ def _build_single_npz(obj_path, npz_dir):
         tc = mesh.active_texture_coordinates
         if tc is not None:
             np.save(os.path.join(frame_dir, 'tcoords.npy'), tc)
+
         np.save(os.path.join(frame_dir, 'points.npy'), mesh.points)
     except Exception as e:
         _log.error('Frame cache build failed [%s]: %s', obj_path, e)
@@ -287,7 +288,7 @@ class FrameBuffer:
         try:
             with alive_bar(
                 total, spinner=None,
-                title='PRELOADING MESH FILES…',
+                title='PRELOADING MESH FILES...',
                 title_length=25, length=15,
                 stats=True, elapsed=True,
                 manual=False, enrich_print=True,
@@ -403,7 +404,7 @@ class FrameBuffer:
         try:
             with alive_bar(
                 total, spinner=None,
-                title='PRELOADING TEXTURE FILES…',
+                title='PRELOADING TEXTURE FILES...',
                 title_length=25, length=15,
                 stats=True, elapsed=True,
                 manual=False, enrich_print=True,
@@ -472,7 +473,7 @@ class FrameBuffer:
         try:
             with alive_bar(
                 len(missing), spinner=None,
-                title='INITIALIZING NPZ CACHE…',
+                title='INITIALIZING NPZ CACHE...',
                 title_length=25, length=15,
                 dual_line=True, stats=True,
                 elapsed=True, manual=False,
@@ -661,7 +662,7 @@ def load_audio_data(
     base_name = os.path.splitext(os.path.basename(audio_path))[0]
     with alive_bar(
                 PREPARE_AUDIO_STEPS, spinner=None,
-                title='PROCESSING AUDIO DATA…',
+                title='PROCESSING AUDIO DATA...',
                 title_length=25, length=15,
                 dual_line=True, stats=True,
                 elapsed=True, manual=False,

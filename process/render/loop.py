@@ -4,13 +4,15 @@ import time
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
+import numpy as np
 
 from configs.colorize import Msg
 from configs.system_resources import get_system_info, get_gpu_info
-from configs.defaults import (
+from configs.settings import (
     TARGET_ANIM_FPS, MAX_FRAME_SKIP,
     UPDATE_INTERVAL, UPDATE_INTERVAL_PLAY,
     SAVE_FILENAME_DIGITS, SAVE_FILENAME_EXT,
+    SAVE_ALPHA, SAVE_PBO_ENABLED,
     TURNTABLE_STEP,
 )
 import traceback
@@ -19,7 +21,7 @@ from process.apply_mode import apply_visual_mode, _active_mode_name
 from process.mode.default import apply_default_reset
 from process.mode.surface import apply_normal
 from process.scene.grid import update_grid_bounds
-from process.window.display import capture_frame, save_frame_to_disk
+from process.window.display import capture_frame, save_frame_to_disk, PBOCapture
 from process.overlay.hud_texts import (
     update_status_text, update_log_overlay,
     update_mode_text, update_colorbar,
@@ -48,13 +50,13 @@ def _playing_monitor(
     play_msg: str = None,
 ) -> None:
     _PLAY_MSG = play_msg if play_msg is not None else (
-        'PLAYING MESH FILE(s)… '
+        'PLAYING MESH FILE(s)... '
         '(PRESS "ESC" TO QUIT / "H" KEY FOR HELP)'
     )
     _gpu_avail = get_gpu_info() is not None
 
     _wait = Msg.Dim(
-        'Load System Usage… Please Wait…', verbose=True,
+        'Load System Usage... Please Wait...', verbose=True,
     )
     sys.stdout.write(f'\033[2K\r{_wait}\n\033[?25l')
     sys.stdout.flush()
@@ -80,14 +82,14 @@ def _playing_monitor(
             break
 
         sys_info_str = Msg.Red(
-            f'CPU: {info["cpu_percent"]:3.1f}% ‧ ', verbose=True,
+            f'CPU: {info["cpu_percent"]:3.1f}% . ', verbose=True,
         )
         sys_info_str += Msg.Cyan(
-            f'MEM: {info["memory_percent"]:3.1f}% ‧ ', verbose=True,
+            f'MEM: {info["memory_percent"]:3.1f}% . ', verbose=True,
         )
         if _gpu_avail:
             sys_info_str += Msg.Green(
-                f'GPU: {gpu["gpu_percent"]:3.1f}% ‧ ', verbose=True,
+                f'GPU: {gpu["gpu_percent"]:3.1f}% . ', verbose=True,
             )
             sys_info_str += Msg.Green(
                 f'VRAM: {gpu["vram_percent"]:3.3f}%', verbose=True,
@@ -124,6 +126,25 @@ def _mesh_bounds(plotter, mesh) -> tuple:
         s * b[5] + (1 - s) * cz,
     )
 
+def _apply_pending_startup_cam(plotter) -> None:
+    pending = getattr(plotter, '_pending_startup_cam', None)
+    if pending is None:
+        return
+    direction, viewup = pending
+    cx, cy, cz = plotter._norm_center
+    fp = np.array([cx, cy, cz])
+    init_pos = np.array(plotter._init_cam_pos[0])
+    dist = float(np.linalg.norm(init_pos - fp))
+    cam = plotter.renderer.GetActiveCamera()
+    cam.SetPosition(*(fp + np.array(direction, dtype=float) * dist))
+    cam.SetFocalPoint(*fp)
+    cam.SetViewUp(*viewup)
+    plotter.renderer.ResetCamera()
+    plotter._init_cam_pos = plotter.camera_position
+    plotter._init_parallel_scale = cam.GetParallelScale()
+    plotter._init_view_angle = cam.GetViewAngle()
+    plotter._pending_startup_cam = None
+
 def _update_seq(plotter, idx):
     seq = getattr(plotter, '_seq_overlay', None)
     if seq is not None:
@@ -146,10 +167,21 @@ def render_loop(plotter, buffer) -> None:
     _blink_stop = None
     _blink_thread = None
     executor = ThreadPoolExecutor(max_workers=2)
+    pbo_capture = None
+    _pbo_pending_fname = None
+    if save_path and SAVE_PBO_ENABLED:
+        _w, _h = plotter.render_window.GetSize()
+        _n_comp = 4 if SAVE_ALPHA else 3
+        plotter.render_window.SetMultiSamples(0)
+        pbo_capture = PBOCapture(plotter.render_window, _w, _h, _n_comp)
+        logger.info(
+            'PBO capture enabled: %dx%d n_comp=%d msaa=0',
+            _w, _h, _n_comp,
+        )
 
     logger.debug('render_loop started: total_frames=%d', total)
 
-    Msg.Dim(f'Load System Usage… Please Wait…', flush=True)
+    Msg.Dim(f'Load System Usage... Please Wait...', flush=True)
 
     while plotter.render_window is not None:
         curr = time.time()
@@ -243,6 +275,8 @@ def render_loop(plotter, buffer) -> None:
                         plotter._mesh_actor.VisibilityOn()
             t_mode = time.perf_counter() - t0
             update_grid_bounds(plotter, _mesh_bounds(plotter, mesh))
+            if rendered_idx < 0:
+                _apply_pending_startup_cam(plotter)
             rendered_idx = plotter._idx
             buffer.notify(plotter._idx)
             if anim_fired:
@@ -277,6 +311,14 @@ def render_loop(plotter, buffer) -> None:
             ui_time = curr
 
         if needs_render:
+
+            _pbo_img = None
+            _t_cap = 0.0
+            if pbo_capture is not None:
+                t0 = time.perf_counter()
+                _pbo_img = pbo_capture.retrieve()
+                _t_cap = time.perf_counter() - t0
+
             t0 = time.perf_counter()
             plotter.render()
             t_render = time.perf_counter() - t0
@@ -298,13 +340,41 @@ def render_loop(plotter, buffer) -> None:
                     f'.{file_idx:0{SAVE_FILENAME_DIGITS}d}'
                     f'.{SAVE_FILENAME_EXT}',
                 )
-                img = capture_frame(plotter)
-                executor.submit(save_frame_to_disk, img, fname)
+                if pbo_capture is not None:
+                    _t_sub = time.perf_counter()
+                    pbo_capture.submit()
+                    _t_sub = time.perf_counter() - _t_sub
+                    if (_pbo_img is not None
+                            and _pbo_pending_fname is not None):
+                        executor.submit(
+                            save_frame_to_disk,
+                            _pbo_img, _pbo_pending_fname,
+                        )
+                        logger.info(
+                            'SAVE_FRAME [%d/%d] fps=%.1f'
+                            ' capture=%.4fs submit=%.4fs fname=%s',
+                            save_counter, total, plotter._fps,
+                            _t_cap, _t_sub,
+                            os.path.basename(_pbo_pending_fname),
+                        )
+                    _pbo_pending_fname = fname
+                else:
+                    _t_cap = time.perf_counter()
+                    img = capture_frame(plotter)
+                    _t_cap = time.perf_counter() - _t_cap
+                    _t_sub = time.perf_counter()
+                    executor.submit(save_frame_to_disk, img, fname)
+                    _t_sub = time.perf_counter() - _t_sub
+                    logger.info(
+                        'SAVE_FRAME [%d/%d] fps=%.1f'
+                        ' capture=%.4fs submit=%.4fs fname=%s',
+                        save_counter + 1, total, plotter._fps,
+                        _t_cap, _t_sub, os.path.basename(fname),
+                    )
                 last_saved_idx = rendered_idx
                 last_save_time = curr
                 save_counter += 1
                 plotter._save_counter = save_counter
-                logger.info('Screenshot saved: %s', fname)
                 if last_saved_idx >= total - 1:
                     if save_loop:
                         logger.debug(
@@ -312,6 +382,25 @@ def render_loop(plotter, buffer) -> None:
                             save_counter,
                         )
                     else:
+                        if (pbo_capture is not None
+                                and _pbo_pending_fname is not None):
+                            _final = pbo_capture.retrieve()
+                            if _final is not None:
+                                executor.submit(
+                                    save_frame_to_disk,
+                                    _final, _pbo_pending_fname,
+                                )
+                                logger.info(
+                                    'SAVE_FRAME [%d/%d] fps=%.1f'
+                                    ' capture=%.4fs submit=%.4fs'
+                                    ' fname=%s',
+                                    save_counter, total, plotter._fps,
+                                    0.0, 0.0,
+                                    os.path.basename(_pbo_pending_fname),
+                                )
+                            pbo_capture.destroy()
+                            pbo_capture = None
+                            _pbo_pending_fname = None
                         save_path = None
                         logger.info(
                             'Screenshot save complete: %d frames.',
@@ -368,5 +457,7 @@ def render_loop(plotter, buffer) -> None:
     if sysinfo_stop is not None:
         sysinfo_stop.set()
         plotter._sysinfo_thread.join(timeout=2.0)
+    if pbo_capture is not None:
+        pbo_capture.destroy()
     executor.shutdown(wait=True)
     logger.debug('render_loop ended')

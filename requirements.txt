@@ -1,4 +1,4 @@
-# VTK must be installed via conda-forge build.
+# ⚠ VTK must be installed via conda-forge build.
 # "pip install vtk" installs vtkOSOpenGLRenderWindow (headless-only) — no display output.
 #
 # conda create -n meshViewer python=3.10

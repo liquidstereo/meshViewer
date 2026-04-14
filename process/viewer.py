@@ -6,9 +6,9 @@ import pyvista as pv
 
 from pyvista.plotting import Plotter
 
-import configs.defaults as _cfg
+import configs.settings as _cfg
 
-from configs.defaults import (
+from configs.settings import (
     RENDER_FXAA, WINDOW_MONITOR_INDEX,
     GRID_FONT_FAMILY, AUDIO_GRID_TEXT_COLOR,
     RENDER_MSAA_SAMPLES, WINDOW_TITLE,
@@ -18,7 +18,7 @@ from configs.defaults import (
     AUDIO_COLOR_GRID, GRID_WIDTH,
     DEFAULT_GRID, AUDIO_ISO_AXIS, AUDIO_COLOR_AXIS,
     AUDIO_ISO_COUNT_DEFAULT, STARTUP_AUDIO_MODE,
-    STARTUP_CAM_DEGREE,
+    STARTUP_CAM_DEGREE, STARTUP_CAM_POSITION, CAM_TRUCK_STEP,
 )
 from configs.colorize import Msg
 from process.init import init_vtk, log_session_start  # noqa: F401
@@ -97,6 +97,39 @@ def setup_cam(plotter, buffer) -> None:
         cam.Azimuth(STARTUP_CAM_DEGREE)
         plotter.renderer.ResetCameraClippingRange()
         plotter._init_cam_pos = plotter.camera_position
+    if STARTUP_CAM_POSITION is not None:
+        truck_dx, pedestal_dy, dolly_dz = STARTUP_CAM_POSITION
+        cam = plotter.renderer.GetActiveCamera()
+        dist = cam.GetDistance()
+        if abs(truck_dx) > 1e-8:
+            right = np.cross(
+                np.array(cam.GetDirectionOfProjection()),
+                np.array(cam.GetViewUp()),
+            )
+            n = np.linalg.norm(right)
+            if n > 1e-8:
+                offset = right / n * (dist * truck_dx)
+                cam.SetPosition(*(np.array(cam.GetPosition()) + offset))
+                cam.SetFocalPoint(*(np.array(cam.GetFocalPoint()) + offset))
+        if abs(pedestal_dy) > 1e-8:
+            up = np.array(cam.GetViewUp())
+            n = np.linalg.norm(up)
+            if n > 1e-8:
+                offset = up / n * (dist * pedestal_dy)
+                cam.SetPosition(*(np.array(cam.GetPosition()) + offset))
+                cam.SetFocalPoint(*(np.array(cam.GetFocalPoint()) + offset))
+        if abs(dolly_dz) > 1e-8:
+            view = np.array(cam.GetDirectionOfProjection())
+            n = np.linalg.norm(view)
+            if n > 1e-8:
+                offset = view / n * (dist * dolly_dz)
+                cam.SetPosition(*(np.array(cam.GetPosition()) + offset))
+        plotter.renderer.ResetCameraClippingRange()
+        plotter._init_cam_pos = plotter.camera_position
+        logger.debug(
+            'setup_cam: STARTUP_CAM_POSITION truck=%.4f pedestal=%.4f dolly=%.4f',
+            truck_dx, pedestal_dy, dolly_dz,
+        )
 
 def build_scene(plotter) -> None:
     t = time.perf_counter()

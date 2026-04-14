@@ -7,7 +7,7 @@ import pyvista as pv
 import vtk
 from vtk.util import numpy_support
 
-from configs.defaults import HDRI_PATH, HDRI_INTENSITY
+from configs.settings import HDRI_PATH, HDRI_INTENSITY
 
 logger = logging.getLogger(__name__)
 

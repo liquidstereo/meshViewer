@@ -3,7 +3,7 @@ import numpy as np
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk
 
-from configs.defaults import NORMAL_COLOR_ENABLE_LIGHTING
+from configs.settings import NORMAL_COLOR_ENABLE_LIGHTING
 from process.mode.common import _set_mesh_input
 
 logger = logging.getLogger(__name__)

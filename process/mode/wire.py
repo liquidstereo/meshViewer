@@ -3,7 +3,7 @@ import numpy as np
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
-from configs.defaults import COLOR_WIREFRAME
+from configs.settings import COLOR_WIREFRAME
 from process.mode.common import (
     _hex_to_rgb,
     _set_flat_line_lighting, _set_actor_transform, _setup_occluder_actor,

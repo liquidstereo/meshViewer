@@ -1,6 +1,6 @@
 import logging
 
-from configs.defaults import (
+from configs.settings import (
     AUDIO_CAM_POSITION, AUDIO_CAM_FOCAL_POINT, AUDIO_CAM_UP,
 )
 from configs.keybinding import TURNTABLE_ROT_STEP

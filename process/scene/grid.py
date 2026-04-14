@@ -1,4 +1,4 @@
-from configs.defaults import COLOR_GRID, GRID_FONT_FAMILY, GRID_WIDTH
+from configs.settings import COLOR_GRID, GRID_FONT_FAMILY, GRID_WIDTH
 
 def _apply_grid_line_width(ax, width: float) -> None:
     for _prop in (

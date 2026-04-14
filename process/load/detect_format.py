@@ -25,7 +25,7 @@ def _detect_ply(path: Path) -> str:
         return _MESH_GEO
     result = _PC_GEO if face_count == 0 else _MESH_GEO
     log.debug(
-        'PLY header: element face=%d → %s', face_count, result
+        'PLY header: element face=%d -> %s', face_count, result
     )
     return result
 
@@ -34,9 +34,9 @@ def _detect_trimesh(path: Path) -> str:
         import trimesh
         loaded = trimesh.load(str(path), process=False, force=None)
         if isinstance(loaded, trimesh.PointCloud):
-            log.debug('trimesh: PointCloud → %s', path.name)
+            log.debug('trimesh: PointCloud -> %s', path.name)
             return _PC_GEO
-        log.debug('trimesh: Mesh → %s', path.name)
+        log.debug('trimesh: Mesh -> %s', path.name)
         return _MESH_GEO
     except Exception as e:
         log.warning(

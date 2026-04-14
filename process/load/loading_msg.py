@@ -5,7 +5,7 @@ from configs.colorize import Msg
 _stop_event: threading.Event | None = None
 _thread: threading.Thread | None = None
 
-_LOADING_MSG = Msg.Dim(f'LOADING DATA… PLEASE WAIT…', verbose=True)
+_LOADING_MSG = Msg.Dim(f'LOADING DATA... PLEASE WAIT...', verbose=True)
 _LOADING_INTERVAL = 0.25
 _LOADING_COLOR = 'white'
 

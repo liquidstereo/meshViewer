@@ -5,7 +5,7 @@ import logging
 import numpy as np
 
 from configs.colorize import Msg
-from configs.defaults import (
+from configs.settings import (
     LOG_DIR, ISO_COUNT_STEP, EDGE_FEATURE_ANGLE_STEP,
     STARTUP_AUDIO_MODE, DEFAULT_BACKFACE, DEFAULT_COLORBAR,
     AUDIO_SEEK_STEP, OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR,

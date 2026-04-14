@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pyvista as pv
 
-from configs.defaults import (
+from configs.settings import (
     AUDIO_FADE_WIDTH,
     AUDIO_GRID_Y_MAX,
     AUDIO_MESH_SMOOTHING_ITERS,

@@ -13,7 +13,7 @@ import pyvista as pv
 from alive_progress import alive_bar
 
 from configs.colorize import Msg
-from configs.defaults import WORKER_COUNT
+from configs.settings import WORKER_COUNT
 
 try:
     from PIL import Image
@@ -244,7 +244,7 @@ def convert_single(input_path: Path, swap_yz: bool) -> None:
             rel_tex = os.path.relpath(tex_path, out_obj.parent)
             _write_mtl(out_dir / mtl_name, rel_tex)
         _write_obj(out_obj, pts, faces, uv, mtl_name)
-        log.info('Point cloud OK: %d pts → %s', len(pts), out_obj)
+        log.info('Point cloud OK: %d pts -> %s', len(pts), out_obj)
     else:
         _write_obj(out_obj, pts, _get_native_faces(mesh), None, None)
         log.info('Mesh OK: %s', out_obj)
@@ -293,7 +293,7 @@ def convert_directory(
         )
 
     log.info(
-        'Converting %d files → %s  workers=%d  is_pc=%s',
+        'Converting %d files -> %s  workers=%d  is_pc=%s',
         len(files), out_dir, n_workers, is_pc,
     )
 
@@ -315,7 +315,7 @@ def convert_directory(
             for a in worker_args
         }
         with alive_bar(
-            len(files), spinner=None, title='PROCESSING…',
+            len(files), spinner=None, title='PROCESSING...',
             title_length=25, length=15, dual_line=True,
             stats=True, elapsed=True, force_tty=True,
         ) as bar:

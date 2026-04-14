@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 
-from configs.defaults import (
+from configs.settings import (
     COLOR_BG, ISOLINE_CONTOUR_MAX_FACES, ISO_NORMAL_OFFSET,
 )
 from process.mode.common import (

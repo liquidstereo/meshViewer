@@ -12,7 +12,7 @@ import numpy as np
 import trimesh
 from alive_progress import alive_bar
 
-from configs.defaults import WORKER_COUNT
+from configs.settings import WORKER_COUNT
 
 MESH_EXTENSIONS = {
     '.ply', '.obj', '.stl', '.off',
@@ -104,7 +104,7 @@ def _attach_texture_if_needed(
         uv=mesh.visual.uv,
         material=material
     )
-    log.debug('Texture attached: %s → %s', mesh_path.name, tex_path.name)
+    log.debug('Texture attached: %s -> %s', mesh_path.name, tex_path.name)
     return mesh
 
 def _describe_visual(mesh: trimesh.Trimesh) -> str:
@@ -139,7 +139,7 @@ def convert_file(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         mesh.export(str(out_path), file_type='glb')
         log.info(
-            'OK [%s] %s → %s',
+            'OK [%s] %s -> %s',
             visual_desc,
             mesh_path.name,
             out_path
@@ -173,7 +173,7 @@ def convert_directory(
 
     out_dir = MESH_DIR_ROOT / f'{input_dir.name}_glb'
     log.info(
-        'Converting %d files → %s  workers=%d',
+        'Converting %d files -> %s  workers=%d',
         len(files), out_dir, n_workers,
     )
 
@@ -190,7 +190,7 @@ def convert_directory(
             for a in worker_args
         }
         with alive_bar(
-            len(files), spinner=None, title='PROCESSING…',
+            len(files), spinner=None, title='PROCESSING...',
             title_length=25, length=15, dual_line=True,
             stats=True, elapsed=True, force_tty=True,
         ) as bar:

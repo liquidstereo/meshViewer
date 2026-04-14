@@ -1,6 +1,6 @@
 import logging
 
-from configs.defaults import (
+from configs.settings import (
     DEFAULT_BACKFACE, REDUCTION_MESH,
     RENDER_MSAA_SAMPLES, SAVE_ALPHA,
 )

@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 from alive_progress import alive_bar
 
-from configs.defaults import MESH_DIR_ROOT, TARGET_ANIM_FPS
+from configs.settings import MESH_DIR_ROOT, TARGET_ANIM_FPS
 from configs.colorize import Msg
 
 SUPPORTED_FORMATS = ('obj', 'ply')
@@ -200,7 +200,7 @@ def convert_abc(
     with alive_bar(
         total,
         spinner=None,
-        title='PLEASE WAIT…',
+        title='PLEASE WAIT...',
         title_length=19,
         length=20,
         dual_line=True,
@@ -214,7 +214,7 @@ def convert_abc(
                 verts, faces, uvs,
                 fmt, scene_name, out_idx, output_dir,
             )
-            bar.title = 'PROCESSING…'
+            bar.title = 'PROCESSING...'
             bar.text = Msg.Dim(
                 f'[{out_idx + 1:04d}/{total:04d}] {out_path}',
                 end='',

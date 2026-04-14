@@ -5,7 +5,7 @@ import logging
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
-from configs.defaults import (
+from configs.settings import (
     AUDIO_TARGET_FPS, TURNTABLE_STEP, AUDIO_MAX_RECORD_WORKERS,
     AUDIO_MIN_DB_THRESHOLD, AUDIO_MIN_MESH_VALUE,
     SAVE_FILENAME_DIGITS, SAVE_FILENAME_EXT,
@@ -26,14 +26,14 @@ def run_audio_loop(
     renderer,
     ctx: AudioContext,
 ) -> None:
-    Msg.Dim('Load System Usage… Please Wait…', flush=True)
+    Msg.Dim('Load System Usage... Please Wait...', flush=True)
     ctx.monitor_ctx[0] = threading.Event()
     ctx.monitor_ctx[1] = threading.Thread(
         target=_playing_monitor,
         args=(ctx.monitor_ctx[0],),
         kwargs={
             'play_msg': (
-                'PLAYING AUDIO FILE… '
+                'PLAYING AUDIO FILE... '
                 '(PRESS "ESC" TO QUIT / "H" KEY FOR HELP)'
             ),
         },

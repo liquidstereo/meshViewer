@@ -5,7 +5,7 @@ from time import time as _now
 import numpy as np
 import pyvista as pv
 
-from configs.defaults import (
+from configs.settings import (
     FNORMAL_MESH_OPACITY,
     STARTUP_MODE_POINT_CLOUD,
     PT_CLOUD_SIZE_DEFAULT,

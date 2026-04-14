@@ -5,7 +5,7 @@ from configs.keybinding import (
     KEY_MESH_QUALITY, KEY_VTX, KEY_BACKFACE,
     KEY_FACE_NORMAL, KEY_DEPTH, KEY_EDGE,
 )
-from configs.defaults import (
+from configs.settings import (
     PT_CLOUD_SIZE_DEFAULT,
     PT_CLOUD_SIZE_POINT_WHITE,
     PT_CLOUD_SIZE_DEPTH,

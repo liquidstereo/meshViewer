@@ -3,7 +3,7 @@ import logging
 import numpy as np
 
 from configs.colorize import Msg
-from configs.defaults import (
+from configs.settings import (
     LOG_DIR,
     DEFAULT_ANIMATION, DEFAULT_BACKFACE, DEFAULT_BBOX,
     DEFAULT_GRID, DEFAULT_LIGHTING, DEFAULT_SMOOTH, DEFAULT_TEXTURE,
@@ -454,13 +454,15 @@ def register(p, trigger, set_mode, total_len):
         trigger()
 
     def _cycle_actor():
-        actors_col = p.renderer.GetActors()
-        actors_col.InitTraversal()
-        actor_list = []
-        a = actors_col.GetNextActor()
-        while a is not None:
-            actor_list.append(a)
-            a = actors_col.GetNextActor()
+        _CYCLE_ATTRS = (
+            '_mesh_actor', '_iso_actor', '_wire_actor',
+            '_edge_actor', '_bbox_actor', '_vtx_point_actor',
+            '_fnormal_actor', '_vtx_sel_actor',
+        )
+        actor_list = [
+            getattr(p, attr) for attr in _CYCLE_ATTRS
+            if getattr(p, attr, None) is not None
+        ]
         n = len(actor_list)
         if n <= 1:
             trigger()

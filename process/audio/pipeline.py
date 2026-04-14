@@ -3,7 +3,7 @@ import logging
 import librosa
 import numpy as np
 
-from configs.defaults import (
+from configs.settings import (
     AUDIO_TARGET_FPS,
     AUDIO_FREQ_SAMPLES,
     AUDIO_FOCUS_FREQ_RANGE,

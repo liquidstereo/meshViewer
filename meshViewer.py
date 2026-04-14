@@ -5,7 +5,7 @@ from logging import DEBUG, INFO
 
 import psutil
 
-from configs.defaults import (
+from configs.settings import (
     INPUT_DIR_ROOT, OUTPUT_DIR_ROOT, MESH_DIR_ROOT, SEQUENCE_DIR_ROOT,
     DEFAULT_ANIMATION, DEFAULT_SMOOTH, DEFAULT_TEXTURE, DEFAULT_PRELOAD_ALL,
     DEFAULT_HIDE_INFO,

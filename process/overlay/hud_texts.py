@@ -2,10 +2,10 @@ import time
 import threading
 import logging
 import vtk
-import configs.defaults as _cfg
+import configs.settings as _cfg
 
 from configs.system_resources import get_system_info, get_gpu_info
-from configs.defaults import (
+from configs.settings import (
     UI_FONT_FAMILY,
     UI_STATUS_LINE_SPACING,
     UI_STATUS_COLOR, UI_STATUS_PAD_PX, UI_STATUS_PAD_PY,
@@ -135,17 +135,17 @@ def update_status_text(plotter, idx: int, total: int, fps: float) -> None:
         elem_info = f'VERTICES: {n_pts:,} TRIANGLES: {n_fc:,}'
 
     sysinfo = getattr(plotter, '_sysinfo_cache', None)
-    sys_line = 'SYS.INFO: LOADING SYSTEM INFO…'
+    sys_line = 'SYS.INFO: LOADING SYSTEM INFO...'
     if sysinfo is not None:
         sys_line = (
             f'CPU: {sysinfo["cpu_percent"]:.1f}%'
-            f' · MEM: {sysinfo["memory_percent"]:.1f}%'
+            f' . MEM: {sysinfo["memory_percent"]:.1f}%'
         )
         gpu = getattr(plotter, '_gpuinfo_cache', None)
         if gpu is not None:
             sys_line += (
-                f' · GPU: {gpu["gpu_percent"]:.1f}%'
-                f' · VRAM: {gpu["vram_percent"]:.1f}%'
+                f' . GPU: {gpu["gpu_percent"]:.1f}%'
+                f' . VRAM: {gpu["vram_percent"]:.1f}%'
             )
 
     is_backface = getattr(plotter, '_is_backface', False)

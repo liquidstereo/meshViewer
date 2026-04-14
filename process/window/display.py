@@ -23,9 +23,9 @@ def _get_monitor_resolution(monitor_index: int) -> tuple[int, int]:
     return 0, 0
 
 def get_window_sizes(monitor_index: int = 0) -> tuple[int, int]:
-    from configs.defaults import WINDOW_WIDTH, WINDOW_HEIGHT
+    from configs.settings import WINDOW_WIDTH, WINDOW_HEIGHT
 
-    from configs.defaults import WINDOW_ASPECT_RATIO
+    from configs.settings import WINDOW_ASPECT_RATIO
 
     mon_w, mon_h = _get_monitor_resolution(monitor_index)
     if mon_w > 0 and mon_h > 0:
@@ -34,14 +34,14 @@ def get_window_sizes(monitor_index: int = 0) -> tuple[int, int]:
             rec_h = round(rec_w * WINDOW_ASPECT_RATIO)
             logger.warning(
                 'get_window_sizes: configured %dx%d exceeds monitor %dx%d'
-                ' — recommended WINDOW_WIDTH=%d (→ %dx%d)',
+                ' — recommended WINDOW_WIDTH=%d (-> %dx%d)',
                 WINDOW_WIDTH, WINDOW_HEIGHT, mon_w, mon_h, rec_w, rec_w, rec_h,
             )
 
     return WINDOW_WIDTH, WINDOW_HEIGHT
 
 def capture_frame(plotter) -> np.ndarray:
-    from configs.defaults import SAVE_ALPHA
+    from configs.settings import SAVE_ALPHA
     w2if = vtk.vtkWindowToImageFilter()
     w2if.SetInput(plotter.render_window)
     if SAVE_ALPHA:
@@ -55,16 +55,97 @@ def capture_frame(plotter) -> np.ndarray:
     n_comp = output.GetPointData().GetScalars().GetNumberOfComponents()
     arr = vtk_to_numpy(
         output.GetPointData().GetScalars()
-    ).reshape(h, w, n_comp)[::-1].copy()
+    ).reshape(h, w, n_comp)
     logger.debug('capture_frame: %dx%d n_comp=%d', w, h, n_comp)
     return arr
 
+class PBOCapture:
+
+    def __init__(
+        self,
+        render_window,
+        w: int,
+        h: int,
+        n_comp: int = 3,
+    ) -> None:
+        from OpenGL.GL import (
+            glGenBuffers, glBindBuffer, glBufferData,
+            GL_PIXEL_PACK_BUFFER, GL_STREAM_READ,
+        )
+        self._rw = render_window
+        self._w, self._h, self._n_comp = w, h, n_comp
+        self._size = w * h * n_comp
+        _ids = glGenBuffers(2)
+        self._pbos = [int(_ids[0]), int(_ids[1])]
+        for pbo in self._pbos:
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo)
+            glBufferData(
+                GL_PIXEL_PACK_BUFFER, self._size, None, GL_STREAM_READ,
+            )
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0)
+        self._submit_idx = 0
+        self._pending: int | None = None
+
+    def submit(self) -> None:
+        from OpenGL.GL import (
+            glBindBuffer, glReadPixels,
+            GL_PIXEL_PACK_BUFFER, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE,
+        )
+        self._rw.MakeCurrent()
+        pbo = self._pbos[self._submit_idx]
+        gl_fmt = GL_RGBA if self._n_comp == 4 else GL_RGB
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo)
+        glReadPixels(
+            0, 0, self._w, self._h, gl_fmt, GL_UNSIGNED_BYTE, 0,
+        )
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0)
+        self._pending = pbo
+        self._submit_idx ^= 1
+
+    def retrieve(self) -> np.ndarray | None:
+        if self._pending is None:
+            return None
+        import ctypes
+        from OpenGL.GL import (
+            glBindBuffer, glMapBuffer, glUnmapBuffer,
+            GL_PIXEL_PACK_BUFFER, GL_READ_ONLY,
+        )
+        self._rw.MakeCurrent()
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, self._pending)
+        ptr = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY)
+        if isinstance(ptr, int):
+            ptr = (ctypes.c_uint8 * self._size).from_address(ptr)
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
+            self._h, self._w, self._n_comp,
+        ).copy()
+        glUnmapBuffer(GL_PIXEL_PACK_BUFFER)
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0)
+        self._pending = None
+        return arr
+
+    def destroy(self) -> None:
+        if not self._pbos:
+            return
+        from OpenGL.GL import glDeleteBuffers
+        glDeleteBuffers(len(self._pbos), self._pbos)
+        self._pbos = []
+        self._pending = None
+
 def save_frame_to_disk(img: np.ndarray, fname: str) -> None:
     import cv2
-    if img.shape[2] == 4:
-        cv2.imwrite(str(fname), cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA))
+    from configs.settings import SAVE_PNG_COMPRESSION, SAVE_JPEG_QUALITY
+    img = img[::-1].copy()
+    _ext = str(fname).rsplit('.', 1)[-1].lower()
+    if _ext in ('jpg', 'jpeg'):
+        params = [cv2.IMWRITE_JPEG_QUALITY, SAVE_JPEG_QUALITY]
+        converted = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    elif img.shape[2] == 4:
+        params = [cv2.IMWRITE_PNG_COMPRESSION, SAVE_PNG_COMPRESSION]
+        converted = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
     else:
-        cv2.imwrite(str(fname), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        params = [cv2.IMWRITE_PNG_COMPRESSION, SAVE_PNG_COMPRESSION]
+        converted = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    cv2.imwrite(str(fname), converted, params)
     logger.debug('save_frame_to_disk: %s', fname)
 
 def save_screenshot(plotter, fname: str = None):

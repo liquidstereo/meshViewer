@@ -3,7 +3,7 @@ import numpy as np
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk
 
-from configs.defaults import (
+from configs.settings import (
     COLOR_BG, COLOR_MESH_NO_TEX, COLOR_MESH_DEFAULT,
     PBR_METALLIC, PBR_ROUGHNESS, PBR_ANISOTROPY,
 )

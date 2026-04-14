@@ -29,6 +29,9 @@ ABC_CONVERT_FORMAT  = 'obj'   # output format for ABC auto-convert ('obj' or 'pl
 # --- Save format ---
 SAVE_FILENAME_DIGITS    = 4       # frame number zero-pad width (####)
 SAVE_FILENAME_EXT       = 'png'   # screenshot file extension
+SAVE_PNG_COMPRESSION    = 3       # PNG compression level (0=none, 9=max, default=3)
+SAVE_JPEG_QUALITY       = 95      # JPEG quality (0-100, used when SAVE_FILENAME_EXT='jpg')
+SAVE_PBO_ENABLED        = True    # PBO async GPU readback (-s mode, False=w2if fallback)
 SCREENSHOT_SUBDIR       = 'screenshot'
 
 # --- System resources ---

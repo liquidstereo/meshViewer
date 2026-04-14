@@ -3,7 +3,7 @@ import numpy as np
 import vtk
 from vtk.util.numpy_support import numpy_to_vtk
 
-from configs.defaults import FNORMAL_SPATIAL_INTERVAL
+from configs.settings import FNORMAL_SPATIAL_INTERVAL
 from process.mode.common import _get_cam_dir
 
 logger = logging.getLogger(__name__)

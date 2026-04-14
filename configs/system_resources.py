@@ -1,7 +1,7 @@
 import os
 import psutil
 
-from configs.defaults import (
+from configs.settings import (
     DEFAULT_RESERVED_MEMORY_MB,
     DEFAULT_RESERVED_CORES, DEFAULT_SYSTEM_USAGE
 )

@@ -2,7 +2,7 @@ import os
 import logging
 import vtk
 
-from configs.defaults import (
+from configs.settings import (
     SEQ_SIZE_W,
     SEQ_PAD_RIGHT_PX, SEQ_PAD_BOTTOM_PX,
     SEQ_IMAGE_EXTS,

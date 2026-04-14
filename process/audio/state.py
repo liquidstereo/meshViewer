@@ -3,7 +3,7 @@ import time
 import logging
 from dataclasses import dataclass, field
 
-from configs.defaults import (
+from configs.settings import (
     DEFAULT_BACKFACE, DEFAULT_COLORBAR, DEFAULT_LIGHTING,
     AUDIO_TARGET_FPS, AUDIO_GRID_Y_MAX,
 )
