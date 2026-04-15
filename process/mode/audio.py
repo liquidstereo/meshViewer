@@ -6,7 +6,7 @@ from process.init import init_vtk, log_session_start
 from process.overlay import init_overlays
 from process.audio.camera import setup_audio_cam, make_cam_callbacks
 from process.audio.state import init_audio_state
-from process.audio.keybinding import register_audio_keys
+from process.keys.audio import register_audio_keys
 from process.audio.loop import run_audio_loop
 from process.load import show_loading
 from configs.colorize import Msg

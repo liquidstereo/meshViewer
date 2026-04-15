@@ -6,7 +6,7 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
 from configs.settings import (
-    AUDIO_TARGET_FPS, TURNTABLE_STEP, AUDIO_MAX_RECORD_WORKERS,
+    AUDIO_TARGET_FPS, TURNTABLE_STEP, WORKER_COUNT,
     AUDIO_MIN_DB_THRESHOLD, AUDIO_MIN_MESH_VALUE,
     SAVE_FILENAME_DIGITS, SAVE_FILENAME_EXT,
 )
@@ -42,7 +42,7 @@ def run_audio_loop(
     ctx.monitor_ctx[1].start()
 
     ctx.executor = (
-        ThreadPoolExecutor(max_workers=AUDIO_MAX_RECORD_WORKERS)
+        ThreadPoolExecutor(max_workers=WORKER_COUNT)
         if ctx.is_recording else None
     )
     frame_interval = 1.0 / AUDIO_TARGET_FPS

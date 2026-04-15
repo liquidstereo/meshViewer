@@ -18,8 +18,7 @@ from configs.settings import (
     DEFAULT_PRELOAD_ALL,
     DEFAULT_WINDOW_SIZE, DEFAULT_PRELOAD_AHEAD,
     PRELOAD_BACK_RATIO, EVICT_MEMORY_THRESHOLD,
-    DEFAULT_MESH_WORKERS, DEFAULT_TEX_WORKERS,
-    CACHE_DIR_ROOT, TEX_EXTENSIONS,
+    WORKER_COUNT, CACHE_DIR_ROOT, TEX_EXTENSIONS,
     TEXTURE_DIR_ROOT,
     AUTO_DECIMATE_THRESHOLD, AUTO_DECIMATE_MAX_CELLS, AUTO_DECIMATE_MAX_RATIO,
     PT_SUBSAMPLE_THRESHOLD, PT_SUBSAMPLE_TARGET,
@@ -185,10 +184,10 @@ class FrameBuffer:
         self._tex_cache = {}
         self._lock = threading.Lock()
         self._mesh_executor = ThreadPoolExecutor(
-            max_workers=DEFAULT_MESH_WORKERS
+            max_workers=WORKER_COUNT
         )
         self._tex_executor = ThreadPoolExecutor(
-            max_workers=DEFAULT_TEX_WORKERS
+            max_workers=WORKER_COUNT
         )
         self._pending_mesh = set()
         self._pending_tex = set()
@@ -216,7 +215,7 @@ class FrameBuffer:
         if tex_needed and npz_needed:
 
             logger.info('Starting parallel: texture extraction + NPZ build.')
-            with ThreadPoolExecutor(max_workers=2) as exe:
+            with ThreadPoolExecutor(max_workers=WORKER_COUNT) as exe:
                 tex_fut = exe.submit(
                     extract_embedded_texture,
                     obj_files[0], self._tex_dir, self._input_name,
@@ -465,7 +464,7 @@ class FrameBuffer:
         if not missing:
             return
 
-        workers = DEFAULT_MESH_WORKERS
+        workers = WORKER_COUNT
         logger.info(
             'Building frame cache: %d stale/missing (workers=%d)...',
             len(missing), workers,

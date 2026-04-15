@@ -7,7 +7,7 @@ from process.audio.geometry import (
 from process.audio.renderer import WaterfallRenderer
 from process.audio.camera import setup_audio_cam, make_cam_callbacks
 from process.audio.state import AudioContext, init_audio_state
-from process.audio.keybinding import register_audio_keys
+from process.keys.audio import register_audio_keys
 from process.audio.loop import run_audio_loop
 
 __all__ = [

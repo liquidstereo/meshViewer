@@ -13,7 +13,7 @@ from configs.settings import (
     UPDATE_INTERVAL, UPDATE_INTERVAL_PLAY,
     SAVE_FILENAME_DIGITS, SAVE_FILENAME_EXT,
     SAVE_ALPHA, SAVE_PBO_ENABLED,
-    TURNTABLE_STEP,
+    TURNTABLE_STEP, WORKER_COUNT,
 )
 import traceback
 
@@ -101,6 +101,9 @@ def _playing_monitor(
         sys.stdout.flush()
 
     blink_thread.join(timeout=2.0)
+    if blink_thread.is_alive():
+
+        sys.stdout.write('\r\033[2K')
 
     sys.stdout.write('\033[1A')
     Msg._clear_line()
@@ -166,7 +169,7 @@ def render_loop(plotter, buffer) -> None:
     _prev_playing = False
     _blink_stop = None
     _blink_thread = None
-    executor = ThreadPoolExecutor(max_workers=2)
+    executor = ThreadPoolExecutor(max_workers=WORKER_COUNT)
     pbo_capture = None
     _pbo_pending_fname = None
     if save_path and SAVE_PBO_ENABLED:
@@ -402,6 +405,7 @@ def render_loop(plotter, buffer) -> None:
                             pbo_capture = None
                             _pbo_pending_fname = None
                         save_path = None
+                        plotter._save_path = None
                         logger.info(
                             'Screenshot save complete: %d frames.',
                             save_counter,
