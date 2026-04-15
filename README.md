@@ -6,9 +6,23 @@ A PyVista/VTK-based interactive 3D mesh viewer built on OpenGL, supporting stati
 
 ## Overview
 
-- **Supported mesh formats:** OBJ · PLY · STL · VTP · VTK · OFF · GLB · GLTF · DAE · 3DS · BYU
-- **Supported texture formats:** JPG · JPEG · PNG · BMP · TIF · TIFF · TGA
-- **Supported audio formats:** WAV · MP3 · FLAC · OGG · AAC · M4A · AIF · AIFF
+MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio visualization tool built on PyVista and VTK (Visualization Toolkit). It supports 11+ mesh formats and 8+ audio formats, and is optimized for seamless playback of time-series frame data as well as static models.
+
+**Key Features**
+
+- **High-speed sequence rendering:** A sliding-window frame buffer algorithm prevents OOM (Out of Memory) issues during large mesh sequence loading while maintaining high FPS.
+- **Multiple visualization modes:**
+  - **PBR & Texture:** Physically Based Rendering with HDRI IBL (Image-Based Lighting) for realistic material representation.
+  - **Analysis modes:** Isoline, Normal Color, Mesh Quality, Edge Extract, and Vertex Label for precise data inspection.
+  - **Point cloud:** Efficient visualization of large-scale point cloud data with custom shader injection and fog effect support.
+- **Audio visualization (Waterfall):** Analyzes audio signals in real time and converts them into 3D waterfall geometry, enabling visual tracking of frequency and amplitude changes.
+- **Capture optimization:** Asynchronous GPU readback via PBO (Pixel Buffer Object) allows per-frame screenshot saving without impacting playback performance.
+
+**Supported Formats**
+
+- **Mesh:** OBJ · PLY · STL · VTP · VTK · OFF · GLB · GLTF · DAE · 3DS · BYU
+- **Texture:** JPG · JPEG · PNG · BMP · TIF · TIFF · TGA
+- **Audio:** WAV · MP3 · FLAC · OGG · AAC · M4A · AIF · AIFF
 
 ---
 
