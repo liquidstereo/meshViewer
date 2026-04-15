@@ -18,7 +18,7 @@ import configs.theme as _theme_mod
 from configs.keybinding import (
     TURNTABLE_ROT_STEP,
     KEY_RESET_GROUP, KEY_CAM_RESET, KEY_CENTER_VIEW, KEY_CAM_PROJ, KEY_MESH_DEFAULT,
-    KEY_SCREENSHOT, KEY_GRID, KEY_TURNTABLE, KEY_HELP,
+    KEY_SCREENSHOT, KEY_GRID, KEY_GRID_ONLY, KEY_TURNTABLE, KEY_HELP,
     KEY_PLAY, KEY_STEP_FWD, KEY_STEP_BWD,
     KEY_FIRST_FRAME, KEY_LAST_FRAME,
     KEY_ROT_XD, KEY_ROT_XU, KEY_ROT_YL, KEY_ROT_YR,
@@ -320,6 +320,15 @@ def register(p, trigger, set_mode, total_len):
         set_mode(LBL_GRID if p._is_grid else '')
         trigger()
 
+    def _toggle_grid_only():
+        p._is_grid = not p._is_grid
+        if p._is_grid:
+            setup_grid(p)
+        else:
+            p.remove_bounds_axes()
+        set_mode(LBL_GRID if p._is_grid else '')
+        trigger()
+
     def _toggle_turntable():
         p._is_turntable = not getattr(p, '_is_turntable', False)
         set_mode(LBL_TURNTABLE if p._is_turntable else '')
@@ -357,6 +366,7 @@ def register(p, trigger, set_mode, total_len):
     bind_key(p, KEY_CENTER_VIEW, _center_view)
     bind_key(p, KEY_MESH_DEFAULT, _set_mesh_default_with_msg)
     bind_key(p, KEY_GRID, _toggle_grid)
+    bind_key(p, KEY_GRID_ONLY, _toggle_grid_only)
     bind_key(p, KEY_TURNTABLE, _toggle_turntable)
     bind_key(p, KEY_HELP, _toggle_help)
 

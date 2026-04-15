@@ -36,6 +36,7 @@ _HELP_TEXT = (
     'Up / Down  First / Last Frame\n'
     '`          Screenshot\n'
     '1          Grid + BBox\n'
+    ';          Grid\n'
     'q          Default Mesh\n'
     's          Smooth Shading\n'
     '2          Vtx Labels / Pt.RGB toggle\n'
