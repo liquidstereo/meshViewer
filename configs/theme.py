@@ -14,3 +14,8 @@ def toggle_theme() -> None:
 
 def set_fontsize(pt: int, scale: float) -> int:
     return max(1, round(pt * scale))
+
+def make_fontsize_fn(scale: float):
+    def _fn(pt: int) -> int:
+        return set_fontsize(pt, scale)
+    return _fn

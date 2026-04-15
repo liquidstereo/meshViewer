@@ -1,13 +1,8 @@
 import os
 import psutil
 
-from configs.settings import (
-    DEFAULT_RESERVED_MEMORY_MB,
-    DEFAULT_RESERVED_CORES, DEFAULT_SYSTEM_USAGE
-)
-
-def get_usable_cpu(reserved_core: int = DEFAULT_RESERVED_CORES,
-                   default_usage: float = DEFAULT_SYSTEM_USAGE) -> int:
+def get_usable_cpu(reserved_core: int = 2,
+                   default_usage: float = 0.80) -> int:
     cpu_count = psutil.cpu_count(logical=False) or 1
     usable_cores = max(1, cpu_count - reserved_core)
     optimal_workers = max(1, int(usable_cores * default_usage))
@@ -61,6 +56,16 @@ def get_gpu_info() -> dict | None:
         }
     except Exception:
         return None
+
+def compute_window_size(
+    reserved_mb: float,
+    system_usage: float,
+    est_frame_mb: int = 12,
+    min_size: int = 1500,
+) -> int:
+    total_ram_mb = psutil.virtual_memory().total / (1024 ** 2)
+    avail_ram_mb = max(1024, (total_ram_mb - reserved_mb) * system_usage)
+    return max(min_size, int(avail_ram_mb / est_frame_mb))
 
 if __name__ == '__main__':
     workers = get_usable_cpu()
