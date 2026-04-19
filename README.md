@@ -189,8 +189,8 @@ All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
 | Startup render mode | `default` |
 | Animation | enabled |
 | Target FPS | 30 |
-| Frame buffer size | 1500 frames |
-| Preload ahead | 1800 frames |
+| Frame buffer size | ≥ 1500 frames (RAM-dependent) |
+| Preload ahead | 87.5% of frame buffer size |
 | Preload all | enabled |
 
 **Scene**
