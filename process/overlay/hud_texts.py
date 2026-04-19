@@ -149,13 +149,18 @@ def update_status_text(plotter, idx: int, total: int, fps: float) -> None:
                 f' . VRAM: {gpu["vram_percent"]:.1f}%'
             )
 
-    is_backface = getattr(plotter, '_is_backface', False)
     is_point_cloud = getattr(plotter, '_n_faces', 1) == 0
     if is_point_cloud:
         pt_fog = getattr(plotter, '_pt_fog_enabled', False)
         cull_label = f'POINT.FOG: {"ON" if pt_fog else "OFF"}'
     else:
-        cull_label = f'BACKFACE.CULLING: {"ON" if is_backface else "OFF"}'
+        _is_backface = getattr(plotter, '_is_backface', False)
+        if getattr(plotter, '_is_edge', False):
+            _is_backface = (
+                not getattr(plotter, '_edge_mesh_hidden', True)
+                and _is_backface
+            )
+        cull_label = f'BACKFACE.CULLING: {"ON" if _is_backface else "OFF"}'
 
     input_name = getattr(
         plotter, '_input_path',

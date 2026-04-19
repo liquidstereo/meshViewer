@@ -19,6 +19,7 @@ from configs.settings import (
     DEFAULT_GRID, AUDIO_ISO_AXIS, AUDIO_COLOR_AXIS,
     AUDIO_ISO_COUNT_DEFAULT, STARTUP_AUDIO_MODE,
     STARTUP_CAM_DEGREE, STARTUP_CAM_POSITION, CAM_TRUCK_STEP,
+    SAVE_PBO_ENABLED,
 )
 from configs.colorize import Msg
 from process.init import init_vtk, log_session_start  # noqa: F401
@@ -146,6 +147,9 @@ def setup_window(plotter) -> None:
     setup_hdri(plotter)
     if getattr(plotter, '_is_smooth', False):
         enable_hdri(plotter)
+    if getattr(plotter, '_save_path', None) and SAVE_PBO_ENABLED:
+        plotter.render_window.SetMultiSamples(0)
+        logger.debug('setup_window: MSAA disabled for PBO capture')
     hide_loading()
 
 def show_window(plotter) -> None:

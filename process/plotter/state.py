@@ -11,6 +11,7 @@ from configs.settings import (
     STARTUP_MODE,
     STARTUP_AXIS,
     STARTUP_REVERSE_X_AXIS, STARTUP_REVERSE_Y_AXIS, STARTUP_REVERSE_Z_AXIS,
+    FLIP_OBJECT_X, FLIP_OBJECT_Y, FLIP_OBJECT_Z,
 )
 
 _AXIS_SWAP_MAP = {'OFF': 0, 'YZ': 1, 'XZ': 2, 'XY': 3}
@@ -57,6 +58,7 @@ def init_plotter_state(plotter, args) -> None:
     plotter._input_path = getattr(args, 'input_path', args.input)
     plotter._idx = 0
     plotter._save_path = args.save or None
+    plotter._save_dir = args.save or None
     plotter._save_loop = args.continuous
     plotter._save_counter = 0
     plotter._is_playing = args.animation
@@ -132,11 +134,11 @@ def init_plotter_state(plotter, args) -> None:
     plotter._depth_unif_key = None
     plotter._depth_scalar_key = None
     plotter._axis_swap = _AXIS_SWAP_MAP.get(STARTUP_AXIS.upper(), 0)
-    plotter._axis_reverse = (
-        STARTUP_REVERSE_X_AXIS,
-        STARTUP_REVERSE_Y_AXIS,
-        STARTUP_REVERSE_Z_AXIS,
-    )
+
+    _rx = STARTUP_REVERSE_X_AXIS ^ FLIP_OBJECT_Y ^ FLIP_OBJECT_Z
+    _ry = STARTUP_REVERSE_Y_AXIS ^ FLIP_OBJECT_X ^ FLIP_OBJECT_Z
+    _rz = STARTUP_REVERSE_Z_AXIS ^ FLIP_OBJECT_X ^ FLIP_OBJECT_Y
+    plotter._axis_reverse = (_rx, _ry, _rz)
     plotter._actor_cycle_idx = 0
     plotter._special_key_dispatch = {}
     plotter._ctrl_key_dispatch = {}

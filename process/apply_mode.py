@@ -26,6 +26,7 @@ from process.mode.face_normal import apply_face_normal
 from process.mode.vtx import apply_vtx_labels
 from process.mode.pt_cloud import (
     apply_pt_fog, apply_pt_depth, apply_pt_normal, set_pc_render_quality,
+    update_pt_size_uniforms,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,11 @@ def _active_face_mode(p) -> str | None:
 def _active_mode_name(p) -> str:
     return _active_face_mode(p) or 'UNKNOWN'
 
+def sync_pt_size_uniforms(p) -> None:
+    if getattr(p, '_n_faces', 1) == 0:
+        if hasattr(p, '_mesh_actor'):
+            update_pt_size_uniforms(p, p._mesh_actor)
+
 def apply_visual_mode(plotter, mesh, preloaded_tex):
     p = plotter
     t_total = time.perf_counter()
@@ -162,6 +168,8 @@ def apply_visual_mode(plotter, mesh, preloaded_tex):
             apply_default_reset(p)
             _apply_point_cloud_startup(p)
             set_pc_render_quality(p, True)
+
+    sync_pt_size_uniforms(p)
 
     if mesh.n_faces_strict == 0:
         mode_name = _active_face_mode(p)

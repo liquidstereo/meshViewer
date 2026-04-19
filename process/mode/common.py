@@ -94,6 +94,14 @@ def _set_mesh_input(mapper, mesh, p, attr):
         return cached
     base = vtk.vtkPolyData()
     base.DeepCopy(mesh)
+
+    tc = mesh.active_texture_coordinates
+    if tc is not None:
+        vtk_tc = numpy_to_vtk(tc, deep=True)
+
+        vtk_tc.SetName('TextureCoordinates')
+        base.GetPointData().SetTCoords(vtk_tc)
+
     mapper.SetInputData(base)
     setattr(p, attr, base)
     return base

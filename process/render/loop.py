@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import math
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -155,30 +156,27 @@ def _update_seq(plotter, idx):
 
 def render_loop(plotter, buffer) -> None:
     frame_count, fps_time = 0, time.time()
-    ui_time = last_anim_time = last_update_time = last_cam_check_time = 0.0
+    ui_time = last_update_time = last_cam_check_time = 0.0
+    last_anim_time = 0.0
     total = buffer.total
     t_get = t_mode = t_ui = t_render = 0.0
     save_path = getattr(plotter, '_save_path', None)
     save_loop = getattr(plotter, '_save_loop', False)
     save_stem = getattr(plotter, '_input_name', 'frame')
     save_counter = 0
-    last_saved_idx = -1
-    last_save_time = 0.0
-    _single_continuous = save_loop and total == 1
+    _RECORD_TOTAL = total
     rendered_idx = -1
     _prev_playing = False
     _blink_stop = None
     _blink_thread = None
     executor = ThreadPoolExecutor(max_workers=WORKER_COUNT)
     pbo_capture = None
-    _pbo_pending_fname = None
     if save_path and SAVE_PBO_ENABLED:
         _w, _h = plotter.render_window.GetSize()
         _n_comp = 4 if SAVE_ALPHA else 3
-        plotter.render_window.SetMultiSamples(0)
         pbo_capture = PBOCapture(plotter.render_window, _w, _h, _n_comp)
         logger.info(
-            'PBO capture enabled: %dx%d n_comp=%d msaa=0',
+            'PBO capture enabled: %dx%d n_comp=%d',
             _w, _h, _n_comp,
         )
 
@@ -186,6 +184,7 @@ def render_loop(plotter, buffer) -> None:
 
     Msg.Dim(f'Load System Usage... Please Wait...', flush=True)
 
+    last_anim_time = time.time() - _FRAME_INTERVAL
     while plotter.render_window is not None:
         curr = time.time()
         needs_render = False
@@ -217,6 +216,14 @@ def render_loop(plotter, buffer) -> None:
                 plotter._last_cam_state = cam_state
                 style_needed = True
 
+                if getattr(plotter, '_n_faces', 1) == 0:
+                    from process.apply_mode import sync_pt_size_uniforms
+                    sync_pt_size_uniforms(plotter)
+
+                if getattr(plotter, '_n_faces', 1) == 0:
+                    from process.apply_mode import sync_pt_size_uniforms
+                    sync_pt_size_uniforms(plotter)
+
         anim_fired = False
         skip = 0
         if plotter._is_playing and (
@@ -234,7 +241,7 @@ def render_loop(plotter, buffer) -> None:
 
         if anim_fired and getattr(plotter, '_is_turntable', False):
             cam = plotter.renderer.GetActiveCamera()
-            cam.Azimuth(TURNTABLE_STEP)
+            cam.Azimuth(TURNTABLE_STEP * (skip + 1))
             plotter.renderer.ResetCameraClippingRange()
             needs_render = True
 
@@ -330,80 +337,76 @@ def render_loop(plotter, buffer) -> None:
                 'ui=%.4fs render=%.4fs',
                 t_get, t_mode, t_ui, t_render,
             )
-            if (save_path
-                    and (rendered_idx != last_saved_idx
-                         or _single_continuous)
-                    and curr - last_save_time >= _FRAME_INTERVAL):
-                file_idx = (
-                    save_counter if save_loop else rendered_idx
-                )
-                fname = os.path.join(
-                    save_path,
-                    f'{save_stem}'
-                    f'.{file_idx:0{SAVE_FILENAME_DIGITS}d}'
-                    f'.{SAVE_FILENAME_EXT}',
-                )
+            if save_path and anim_fired:
                 if pbo_capture is not None:
                     _t_sub = time.perf_counter()
                     pbo_capture.submit()
                     _t_sub = time.perf_counter() - _t_sub
-                    if (_pbo_img is not None
-                            and _pbo_pending_fname is not None):
+                    if _pbo_img is not None:
+                        _fi = save_counter
+                        _fn = os.path.join(
+                            save_path,
+                            f'{save_stem}'
+                            f'.{_fi:0{SAVE_FILENAME_DIGITS}d}'
+                            f'.{SAVE_FILENAME_EXT}',
+                        )
                         executor.submit(
-                            save_frame_to_disk,
-                            _pbo_img, _pbo_pending_fname,
+                            save_frame_to_disk, _pbo_img, _fn,
                         )
+                        save_counter += 1
+                        plotter._save_counter = save_counter
                         logger.info(
-                            'SAVE_FRAME [%d/%d] fps=%.1f'
-                            ' capture=%.4fs submit=%.4fs fname=%s',
-                            save_counter, total, plotter._fps,
+                            'SAVE_FRAME [%d/%d]'
+                            ' cap=%.4fs sub=%.4fs',
+                            save_counter, _RECORD_TOTAL,
                             _t_cap, _t_sub,
-                            os.path.basename(_pbo_pending_fname),
                         )
-                    _pbo_pending_fname = fname
+                        if not save_loop and save_counter >= _RECORD_TOTAL:
+                            _final = pbo_capture.retrieve()
+                            if _final is not None:
+                                _fi = save_counter
+                                _fn = os.path.join(
+                                    save_path,
+                                    f'{save_stem}'
+                                    f'.{_fi:0{SAVE_FILENAME_DIGITS}d}'
+                                    f'.{SAVE_FILENAME_EXT}',
+                                )
+                                executor.submit(
+                                    save_frame_to_disk, _final, _fn,
+                                )
+                                save_counter += 1
+                                plotter._save_counter = save_counter
+                            pbo_capture.destroy()
+                            pbo_capture = None
+                            save_path = None
+                            plotter._save_path = None
+                            logger.info(
+                                'Screenshot save complete: %d frames.',
+                                save_counter,
+                            )
                 else:
                     _t_cap = time.perf_counter()
                     img = capture_frame(plotter)
                     _t_cap = time.perf_counter() - _t_cap
-                    _t_sub = time.perf_counter()
-                    executor.submit(save_frame_to_disk, img, fname)
-                    _t_sub = time.perf_counter() - _t_sub
-                    logger.info(
-                        'SAVE_FRAME [%d/%d] fps=%.1f'
-                        ' capture=%.4fs submit=%.4fs fname=%s',
-                        save_counter + 1, total, plotter._fps,
-                        _t_cap, _t_sub, os.path.basename(fname),
+                    _fi = save_counter
+                    _fn = os.path.join(
+                        save_path,
+                        f'{save_stem}'
+                        f'.{_fi:0{SAVE_FILENAME_DIGITS}d}'
+                        f'.{SAVE_FILENAME_EXT}',
                     )
-                last_saved_idx = rendered_idx
-                last_save_time = curr
-                save_counter += 1
-                plotter._save_counter = save_counter
-                if last_saved_idx >= total - 1:
-                    if save_loop:
-                        logger.debug(
-                            'Save loop cycle: %d total saved.',
-                            save_counter,
-                        )
-                    else:
-                        if (pbo_capture is not None
-                                and _pbo_pending_fname is not None):
-                            _final = pbo_capture.retrieve()
-                            if _final is not None:
-                                executor.submit(
-                                    save_frame_to_disk,
-                                    _final, _pbo_pending_fname,
-                                )
-                                logger.info(
-                                    'SAVE_FRAME [%d/%d] fps=%.1f'
-                                    ' capture=%.4fs submit=%.4fs'
-                                    ' fname=%s',
-                                    save_counter, total, plotter._fps,
-                                    0.0, 0.0,
-                                    os.path.basename(_pbo_pending_fname),
-                                )
-                            pbo_capture.destroy()
-                            pbo_capture = None
-                            _pbo_pending_fname = None
+                    _t_sub = time.perf_counter()
+                    executor.submit(save_frame_to_disk, img, _fn)
+                    _t_sub = time.perf_counter() - _t_sub
+                    save_counter += 1
+                    plotter._save_counter = save_counter
+                    logger.info(
+                        'SAVE_FRAME [%d/%d]'
+                        ' cap=%.4fs sub=%.4fs fname=%s',
+                        save_counter, _RECORD_TOTAL,
+                        _t_cap, _t_sub, os.path.basename(_fn),
+                    )
+                    if not save_loop and save_counter >= _RECORD_TOTAL:
                         save_path = None
                         plotter._save_path = None
                         logger.info(

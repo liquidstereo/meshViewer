@@ -4,6 +4,7 @@ import time
 import hashlib
 import logging
 import threading
+import multiprocessing
 from concurrent.futures import (
     ThreadPoolExecutor, ProcessPoolExecutor, as_completed,
 )
@@ -59,17 +60,59 @@ def _activate_texture_coords(mesh: 'pv.PolyData') -> None:
     if mesh.active_texture_coordinates is not None:
         logger.debug('UV already active: skipping activation.')
         return
+
     pd = mesh.GetPointData()
-    for name in _UV_CANDIDATE_NAMES:
-        arr = pd.GetArray(name)
-        if arr is None:
+    n_arrays = pd.GetNumberOfArrays()
+
+    for i in range(n_arrays):
+        name = pd.GetArrayName(i)
+        if not name:
             continue
-        if arr.GetNumberOfComponents() < 2:
+
+        lower_name = name.lower()
+
+        if any(p in lower_name for p in ('uv', 'tex', 'coord')):
+            arr = pd.GetArray(name)
+            if arr and arr.GetNumberOfComponents() >= 2:
+                pd.SetActiveTCoords(name)
+                mesh.Modified()
+                logger.info(
+                    'Texture coordinates activated by pattern: "%s" (components=%d)',
+                    name, arr.GetNumberOfComponents()
+                )
+                return
+
+    logger.debug('No valid UV array found by pattern matching.')
+
+def _collect_polydata_blocks(mb: 'pv.MultiBlock') -> list:
+    blocks = []
+    for i in range(mb.n_blocks):
+        blk = mb[i]
+        if blk is None:
             continue
-        pd.SetActiveTCoords(name)
-        logger.info('Texture coordinates activated: "%s"', name)
-        return
-    logger.debug('No UV array found in point_data.')
+        if isinstance(blk, pv.PolyData) and blk.n_points > 0:
+            blocks.append(blk)
+        elif isinstance(blk, pv.MultiBlock):
+            blocks.extend(_collect_polydata_blocks(blk))
+    return blocks
+
+def _merge_gltf_blocks(blocks: list) -> 'pv.PolyData':
+    import vtk as _vtk
+    uv_blocks = [
+        b for b in blocks
+        if any(
+            b.GetPointData().GetArray(n) is not None
+            for n in _UV_CANDIDATE_NAMES
+        )
+    ]
+    target = uv_blocks if uv_blocks else blocks
+    if len(target) == 1:
+        return target[0]
+    append = _vtk.vtkAppendPolyData()
+    for b in target:
+        append.AddInputData(b)
+    append.Update()
+    return pv.wrap(append.GetOutput())
 
 def _read_as_polydata(path: str) -> 'pv.PolyData':
     result = pv.read(path)
@@ -81,12 +124,16 @@ def _read_as_polydata(path: str) -> 'pv.PolyData':
         if is_gltf:
             _fix_gltf_v_flip(result)
         return result
-    combined = result.combine()
-    if isinstance(combined, pv.PolyData):
-        poly = combined
+    blocks = _collect_polydata_blocks(result)
+    if blocks:
+        poly = _merge_gltf_blocks(blocks)
     else:
-        poly = combined.extract_surface(
-            algorithm='dataset_surface'
+        combined = result.combine()
+        poly = (
+            combined if isinstance(combined, pv.PolyData)
+            else combined.extract_surface(
+                algorithm='dataset_surface'
+            )
         )
     _activate_texture_coords(poly)
     if is_gltf:
@@ -183,11 +230,12 @@ class FrameBuffer:
         self._mesh_cache = {}
         self._tex_cache = {}
         self._lock = threading.Lock()
+        _eff_workers = WORKER_COUNT if len(obj_files) >= 4 else 1
         self._mesh_executor = ThreadPoolExecutor(
-            max_workers=WORKER_COUNT
+            max_workers=_eff_workers
         )
         self._tex_executor = ThreadPoolExecutor(
-            max_workers=WORKER_COUNT
+            max_workers=_eff_workers
         )
         self._pending_mesh = set()
         self._pending_tex = set()
@@ -208,11 +256,22 @@ class FrameBuffer:
         self._tex_dir = os.path.join(
             TEXTURE_DIR_ROOT, self._input_name
         )
-        self._shared_tex = self._find_shared_texture()
-        tex_needed = self._shared_tex is None
+        _tex_path = self._find_shared_texture()
+        self._shared_tex = None
+        tex_needed = _tex_path is None
         npz_needed = not self._no_cache
 
-        if tex_needed and npz_needed:
+        if _tex_path and npz_needed:
+
+            logger.info('Starting parallel: texture load + NPZ build.')
+            with ThreadPoolExecutor(max_workers=2) as exe:
+                tex_fut = exe.submit(self._load_tex_from_path, _tex_path)
+                npz_fut = exe.submit(self._ensure_npz_cache)
+                self._shared_tex = tex_fut.result()
+                npz_fut.result()
+        elif _tex_path:
+            self._shared_tex = self._load_tex_from_path(_tex_path)
+        elif tex_needed and npz_needed:
 
             logger.info('Starting parallel: texture extraction + NPZ build.')
             with ThreadPoolExecutor(max_workers=WORKER_COUNT) as exe:
@@ -224,20 +283,14 @@ class FrameBuffer:
                 extracted = tex_fut.result()
                 npz_fut.result()
             if extracted is not None:
-                self._shared_tex = pv.read_texture(extracted)
-                logger.info(
-                    'Texture loaded from extracted file: %s', extracted,
-                )
+                self._shared_tex = self._load_tex_from_path(extracted)
+        elif tex_needed:
+            extracted = extract_embedded_texture(
+                obj_files[0], self._tex_dir, self._input_name,
+            )
+            if extracted is not None:
+                self._shared_tex = self._load_tex_from_path(extracted)
         else:
-            if tex_needed:
-                extracted = extract_embedded_texture(
-                    obj_files[0], self._tex_dir, self._input_name,
-                )
-                if extracted is not None:
-                    self._shared_tex = pv.read_texture(extracted)
-                    logger.info(
-                        'Texture loaded from extracted file: %s', extracted,
-                    )
             if npz_needed:
                 self._ensure_npz_cache()
         if self._preload_all:
@@ -293,20 +346,25 @@ class FrameBuffer:
                 manual=False, enrich_print=True,
                 force_tty=True
             ) as bar:
-                futs = {
-                    self._mesh_executor.submit(
-                        self._load_mesh, i
-                    ): i
-                    for i in range(total)
-                }
-                for fut in as_completed(futs):
-                    idx = futs[fut]
-                    mesh = fut.result()
+                if total == 1:
+                    mesh = self._load_mesh(0)
                     with self._lock:
-                        self._mesh_cache[idx] = mesh
+                        self._mesh_cache[0] = mesh
                     bar()
+                else:
+                    futs = {
+                        self._mesh_executor.submit(
+                            self._load_mesh, i
+                        ): i
+                        for i in range(total)
+                    }
+                    for fut in as_completed(futs):
+                        idx = futs[fut]
+                        mesh = fut.result()
+                        with self._lock:
+                            self._mesh_cache[idx] = mesh
+                        bar()
                 bar.title = 'MESH PRELOADING COMPLETE'
-
         except KeyboardInterrupt:
             logger.warning('Mesh file preload interrupted.')
             self.cleanup()
@@ -322,7 +380,7 @@ class FrameBuffer:
             self._max_points = max(m.n_points for m in vals)
             logger.debug('PT max_points: %d', self._max_points)
 
-    def _find_shared_texture(self):
+    def _find_shared_texture(self) -> 'str | None':
         found_in_subdir = None
         found_in_root = None
 
@@ -352,8 +410,16 @@ class FrameBuffer:
         if t_path is None:
             return None
 
-        tex = pv.read_texture(t_path)
         logger.info('Shared texture found: %s', t_path)
+        return t_path
+
+    def _load_tex_from_path(self, t_path: str) -> 'pv.Texture':
+        t0 = time.perf_counter()
+        tex = pv.read_texture(t_path)
+        logger.info(
+            'Texture loaded: %s in %.4fs', t_path,
+            time.perf_counter() - t0,
+        )
         return tex
 
     def _submit_tex_futs(self) -> 'dict | None':
@@ -376,11 +442,6 @@ class FrameBuffer:
     def _preload_all_textures(
         self, tex_futs: 'dict | None' = None
     ) -> None:
-        if not os.path.isdir(self._tex_dir):
-            logger.info(
-                'Texture dir not found, skipping tex preload.'
-            )
-            return
         if self._shared_tex is not None:
             with self._lock:
                 for i in range(self.total):
@@ -388,6 +449,11 @@ class FrameBuffer:
             logger.info(
                 'Shared texture applied to all %d frames.',
                 self.total,
+            )
+            return
+        if not os.path.isdir(self._tex_dir):
+            logger.info(
+                'Texture dir not found, skipping tex preload.'
             )
             return
         total = self.total
@@ -472,33 +538,44 @@ class FrameBuffer:
         try:
             with alive_bar(
                 len(missing), spinner=None,
-                title='INITIALIZING NPZ CACHE...',
+                title='INITIALIZING FILE CACHE...',
                 title_length=25, length=15,
                 dual_line=True, stats=True,
                 elapsed=True, manual=False,
                 enrich_print=True, force_tty=True
             ) as bar:
-                with ProcessPoolExecutor(
-                    max_workers=workers
-                ) as exe:
-                    futs = {
-                        exe.submit(
-                            _build_single_npz,
-                            f, self._npz_dir
-                        ): f
-                        for f in missing
-                    }
-                    for fut in as_completed(futs):
-                        src = futs[fut]
-                        try:
-                            fut.result()
-                        except Exception as e:
-                            logger.error(
-                                'Frame cache error [%s]: %s', src, e
-                            )
-                            raise
-                        bar()
-                bar.title = 'NPZ FILE CACHING COMPLETE'
+                if len(missing) == 1:
+                    try:
+                        _build_single_npz(missing[0], self._npz_dir)
+                    except Exception as e:
+                        logger.error(
+                            'Frame cache error [%s]: %s', missing[0], e
+                        )
+                        raise
+                    bar()
+                else:
+                    with ProcessPoolExecutor(
+                        max_workers=workers,
+                        mp_context=multiprocessing.get_context('spawn'),
+                    ) as exe:
+                        futs = {
+                            exe.submit(
+                                _build_single_npz,
+                                f, self._npz_dir
+                            ): f
+                            for f in missing
+                        }
+                        for fut in as_completed(futs):
+                            src = futs[fut]
+                            try:
+                                fut.result()
+                            except Exception as e:
+                                logger.error(
+                                    'Frame cache error [%s]: %s', src, e
+                                )
+                                raise
+                            bar()
+                bar.title = 'FILE CACHING COMPLETE'
         except KeyboardInterrupt:
             logger.warning('Frame cache build interrupted.')
             self.cleanup()

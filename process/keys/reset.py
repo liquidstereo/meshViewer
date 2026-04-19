@@ -44,7 +44,7 @@ from process.mode.labels import (
     FMT_ACTOR_CYCLE,
     AXIS_SWAP_NAMES, FMT_AXIS_SWAP,
 )
-from process.init.session_log import log_session_end
+from process.init.session_log import log_session_end, _SETTINGS_LOG_FILENAME
 from process.scene.grid import setup_grid
 from process.window.display import save_screenshot
 from process.mode.default import apply_default_reset
@@ -586,6 +586,12 @@ def register(p, trigger, set_mode, total_len):
             Msg.Dim(
                 f'Saved {save_counter} captured images to "{rel_path}".'
             )
+        save_dir = getattr(p, '_save_dir', None)
+        if save_dir:
+            _settings_log = os.path.join(
+                os.path.relpath(save_dir), _SETTINGS_LOG_FILENAME
+            )
+
         Msg.Dim(f'Please refer to the log file for details. ({log_path})')
         try:
             p.close()

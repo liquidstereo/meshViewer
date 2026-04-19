@@ -6,26 +6,36 @@ A PyVista/VTK-based interactive 3D mesh viewer built on OpenGL, supporting stati
 
 ## Overview
 
-- **Supported mesh formats:** OBJ · PLY · STL · VTP · VTK · OFF · GLB · GLTF · DAE · 3DS · BYU
-- **Supported texture formats:** JPG · JPEG · PNG · BMP · TIF · TIFF · TGA
-- **Supported audio formats:** WAV · MP3 · FLAC · OGG · AAC · M4A · AIF · AIFF
+MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio visualization tool built on PyVista and VTK (Visualization Toolkit). It supports 11+ mesh formats and 8+ audio formats, and is optimized for seamless playback of time-series frame data as well as static models.
+
+**Key Features**
+
+- **High-speed sequence rendering:** A sliding-window frame buffer algorithm prevents OOM (Out of Memory) issues during large mesh sequence loading while maintaining high FPS.
+- **Multiple visualization modes:**
+  - **PBR & Texture:** Physically Based Rendering with HDRI IBL (Image-Based Lighting) for realistic material representation.
+  - **Analysis modes:** Isoline, Normal Color, Mesh Quality, Edge Extract, and Vertex Label for precise data inspection.
+  - **Point cloud:** Efficient visualization of large-scale point cloud data with custom shader injection and fog effect support.
+- **Audio visualization (Waterfall):** Analyzes audio signals in real time and converts them into 3D waterfall geometry, enabling visual tracking of frequency and amplitude changes.
+- **Capture optimization:** Asynchronous GPU readback via PBO (Pixel Buffer Object) allows per-frame screenshot saving without impacting playback performance.
+
+**Supported Formats**
+
+- **Mesh:** OBJ · PLY · STL · VTP · VTK · OFF · GLB · GLTF · DAE · 3DS · BYU
+- **Texture:** JPG · JPEG · PNG · BMP · TIF · TIFF · TGA
+- **Audio:** WAV · MP3 · FLAC · OGG · AAC · M4A · AIF · AIFF
 
 ---
 
 ## Requirements
 
-- **Python** 3.10+
-- **Miniconda** (required — VTK must be installed via conda-forge, not pip)
+- [Python 3.10+](https://www.python.org/downloads/)
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) (required — VTK must be installed via conda-forge, not pip)
 
 ---
 
 ## Usage
 
 ### Installation
-
-#### Prerequisites
-- [Python 3.10+](https://www.python.org/downloads/)
-- [Miniconda](https://docs.conda.io/en/latest/miniconda.html)
 
 #### Setup Instructions
 
@@ -168,7 +178,7 @@ All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
 |---|---|
 | Width × Height | 1024 × 1024 |
 | Aspect ratio | 1.0 (square) |
-| MSAA samples | 8 |
+| MSAA samples | 0 (disabled) |
 | FXAA | enabled |
 | Monitor index | 0 |
 
@@ -176,11 +186,11 @@ All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
 
 | Setting | Default |
 |---|---|
-| Startup render mode | `pbr_tex` |
+| Startup render mode | `default` |
 | Animation | enabled |
 | Target FPS | 30 |
 | Frame buffer size | 1500 frames |
-| Preload ahead | 600 frames |
+| Preload ahead | 1800 frames |
 | Preload all | enabled |
 
 **Scene**
@@ -193,6 +203,7 @@ All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
 | Additional lighting | off |
 | Turntable auto-rotation | on |
 | Colorbar | on |
+| HDRI IBL | enabled |
 
 ---
 
@@ -248,7 +259,9 @@ All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
 |---|---|
 | `` ` `` | Save screenshot |
 | `1` | Grid + BBox toggle |
+| `;` | Grid only toggle |
 | `b` | Backface culling / mesh occluder toggle |
+| `F11` | Theme toggle (black ↔ white) |
 | `F12` | Cycle actor visibility |
 | `PgUp` / `PgDn` | Axis cycle (CAM → Z → Y → X) |
 | `KP_+` / `KP_-` | Mode parameter increment / decrement |
@@ -260,6 +273,70 @@ All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
 
 ---
 
+## Troubleshooting
+
+### Black Screen or Flickering
+
+Caused by an FXAA/MSAA conflict on certain GPU drivers.
+
+In `configs/settings.py`:
+```python
+RENDER_FXAA         = False
+RENDER_MSAA_SAMPLES = 8
+```
+
+### Slow Initial Load
+
+The PBR/Smooth mode preloads a large HDRI file (~80 MB) at startup.
+To disable HDRI loading (falls back to headlight illumination):
+
+In `configs/settings_mesh.py`:
+```python
+HDRI_ENABLE = False
+```
+
+### High CPU Usage or Slow Sequence Load
+
+Reduce the worker thread count by lowering the system usage ratio.
+
+In `configs/settings.py`:
+```python
+DEFAULT_SYSTEM_USAGE = 0.50  # default: 0.80; recommended 0.50-0.60 on low-end CPUs
+```
+
+### Cache Corruption or Stale Mesh Data
+
+If mesh data appears incorrect after re-exporting source files, bypass the cache:
+
+```bash
+python meshViewer.py -i <name> --no-cache
+```
+
+To permanently clear the cache, delete the `input/cache/` directory.
+
+### Texture Not Displayed
+
+- Place the texture at `input/texture/<stem>/` or `input/texture/<stem>.*`
+- The texture filename stem must match the mesh filename stem exactly
+- If both a subdirectory and a root-level file exist for the same stem, an error is
+  raised — remove one
+
+### Audio Mode: Frame Seek
+
+Use `←` / `→` keys to seek forward/backward by `AUDIO_SEEK_STEP` frames (default: 30).
+Adjust the step size in `configs/settings_audio.py`:
+
+```python
+AUDIO_SEEK_STEP = 30
+```
+
+### Audio Mode: Flat Waveform in Silent Sections
+
+Long silent sections may flatten the waveform. This is expected behavior — amplitude is
+normalized globally via `global_max`. No action needed.
+
+---
+
 ## Notes
 
 - **VTK must be installed via conda-forge.**
@@ -267,10 +344,6 @@ All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
   display a window. Always use `conda install -c conda-forge vtk`.
 - **Audio mode** requires `librosa` and `soundfile`. The audio file can be placed in
   `input/audio/` or specified as a direct path.
-- **HDRI file** (`assets/hdri/pav_studio_03_4k.hdr`) is not included due to file size.
-  Without it, PBR/IBL modes fall back to headlight illumination.
-  Download `pav_studio_03_4k.hdr` from https://polyhaven.com/a/pav_studio_03
-  and place it at `assets/hdri/pav_studio_03_4k.hdr`.
 - **Cache files** (VTP/NPZ) are written to `input/cache/` on first load to speed up
   subsequent runs. Use `--no-cache` to bypass.
 - **Point cloud files** (PLY/other with no face data) are auto-detected on load and

@@ -7,12 +7,15 @@ import pyvista as pv
 import vtk
 from vtk.util import numpy_support
 
-from configs.settings import HDRI_PATH, HDRI_INTENSITY
+from configs.settings import HDRI_PATH, HDRI_INTENSITY, HDRI_ENABLE
 
 logger = logging.getLogger(__name__)
 
 def setup_hdri(plotter) -> None:
     plotter._hdri_tex = None
+    if not HDRI_ENABLE:
+        logger.debug('setup_hdri: skipped (HDRI_ENABLE=False)')
+        return
     if not os.path.isfile(HDRI_PATH):
         logger.warning('HDRI file not found: %s', HDRI_PATH)
         return

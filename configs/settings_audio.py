@@ -1,0 +1,56 @@
+from configs.theme import (
+    apply_theme as _apply_theme,
+    make_fontsize_fn as _make_fontsize_fn,
+)
+
+_font_scale   = 1.0
+_set_fontsize = _make_fontsize_fn(_font_scale)
+_COLOR_GRID   = _apply_theme('#7A7A7A')
+
+STARTUP_AUDIO_MODE      = 'ISOLINE'
+AUDIO_ISO_AXIS          = 'Y'
+AUDIO_COLOR_AXIS        = 'Y'
+AUDIO_ISO_COUNT_DEFAULT = 20
+
+AUDIO_ISOLINE_CMAP   = 'gist_rainbow'
+AUDIO_WIREFRAME_CMAP = 'jet'
+AUDIO_MESH_CMAP      = 'plasma'
+AUDIO_DEPTH_CMAP     = 'twilight'
+AUDIO_EDGE_CMAP      = 'viridis'
+AUDIO_QUALITY_CMAP   = 'RdYlGn'
+AUDIO_FNORMAL_CMAP   = 'plasma'
+
+AUDIO_GRID_Y_MAX        = 100.0
+AUDIO_FREQ_NORM_MAX     = 100.0
+AUDIO_COLOR_GRID        = _COLOR_GRID
+AUDIO_COLOR_BBOX        = _COLOR_GRID
+AUDIO_AXIS_LABEL_FONT_SIZE = _set_fontsize(12)
+AUDIO_GRID_TEXT_COLOR   = _COLOR_GRID
+
+AUDIO_TARGET_FPS        = 30
+AUDIO_FREQ_SAMPLES      = 60
+AUDIO_TIME_RANGE        = 3.0
+AUDIO_FOCUS_FREQ_RANGE  = (5, 150)
+AUDIO_REFERENCE_FRAMES  = 5
+AUDIO_QUIET_THRESHOLD   = 10.0
+AUDIO_MIN_DB_THRESHOLD  = 15.0
+AUDIO_MIN_MESH_VALUE    = 10
+
+AUDIO_FADE_WIDTH            = 0.01
+AUDIO_MESH_SMOOTHING_ITERS  = 40
+AUDIO_MESH_Y_OFFSET         = -1.0
+AUDIO_MESH_Y_CUTOFF         = 1.0
+
+AUDIO_ISOLINE_WIDTH              = 3.0
+AUDIO_ISO_OFFSET                 = 0.5
+AUDIO_WIREFRAME_LINE_WIDTH       = 3.0
+AUDIO_EDGE_FEATURE_ANGLE         = 15.0
+AUDIO_FNORMAL_SPATIAL_INTERVAL   = 5.0
+AUDIO_FNORMAL_SCALE              = 5.0
+AUDIO_SEEK_STEP                  = 30
+
+AUDIO_CAM_POSITION    = (350, 300, 350)
+AUDIO_CAM_FOCAL_POINT = (50, 50, 50)
+AUDIO_CAM_UP          = (0, 1, 0)
+
+AUDIO_RECORD_SUBDIR = 'screenshot'

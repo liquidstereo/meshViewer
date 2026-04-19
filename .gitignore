@@ -5,6 +5,7 @@ input/mesh/
 input/sequence/
 input/texture/
 input/cache/
+input/audio/
 output/
 logs/
 *.log

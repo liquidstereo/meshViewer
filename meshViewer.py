@@ -25,7 +25,8 @@ from process.viewer import (
 from process.plotter import init_plotter_state
 from process.scene import init_actors
 from process.overlay import init_overlays
-from process.load import show_loading
+from process.load import show_loading, detect_geometry_type
+from process.init.session_log import write_settings_log
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Mesh Builder')
@@ -131,6 +132,11 @@ def main():
                 OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR, _base
             )
         setup_logging(_base, level=DEBUG if args.verbose else INFO)
+        if args.save:
+            write_settings_log(
+                args.save, geo_type='audio',
+                input_path=os.path.relpath(_audio_path),
+            )
         exec_audio_viewer(_audio_path, args)
         return
 
@@ -191,6 +197,12 @@ def main():
         args.save = os.path.join(OUTPUT_DIR_ROOT, args.input)
 
     setup_logging(args.input, level=DEBUG if args.verbose else INFO)
+    if args.save:
+        _geo = detect_geometry_type(files[0]) if files else 'mesh'
+        write_settings_log(
+            args.save, geo_type=_geo,
+            input_path=getattr(args, 'input_path', ''),
+        )
 
     _fs = int(args.frame_start)
     _fe = int(args.frame_end) if args.frame_end is not None else None

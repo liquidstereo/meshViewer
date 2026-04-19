@@ -7,6 +7,12 @@ _PLY_EXT  = '.ply'
 _MESH_GEO = 'mesh'
 _PC_GEO   = 'point_cloud'
 
+_MESH_ONLY_EXTS = frozenset({
+    '.obj', '.stl', '.vtp', '.vtk',
+    '.off', '.glb', '.gltf',
+    '.dae', '.3ds', '.byu',
+})
+
 def _detect_ply(path: Path) -> str:
     face_count = 0
     try:
@@ -47,6 +53,10 @@ def _detect_trimesh(path: Path) -> str:
 
 def detect_geometry_type(path: 'str | Path') -> str:
     p = Path(path)
-    if p.suffix.lower() == _PLY_EXT:
+    ext = p.suffix.lower()
+    if ext == _PLY_EXT:
         return _detect_ply(p)
+    if ext in _MESH_ONLY_EXTS:
+        log.debug('extension-based: %s -> mesh', p.name)
+        return _MESH_GEO
     return _detect_trimesh(p)

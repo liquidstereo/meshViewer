@@ -147,7 +147,7 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_edge = True
-            p._edge_mesh_hidden = True
+            p._edge_mesh_hidden = False
         else:
             if hasattr(p, '_mesh_actor'):
                 p._mesh_actor.VisibilityOn()
