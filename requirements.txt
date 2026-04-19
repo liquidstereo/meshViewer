@@ -6,81 +6,25 @@
 # conda install -c conda-forge vtk
 # pip install -r requirements.txt
 
-about-time==4.2.1
-aiohappyeyeballs @ file:///home/conda/feedstock_root/build_artifacts/aiohappyeyeballs_1741775197943/work
-aiohttp @ file:///home/conda/feedstock_root/build_artifacts/aiohttp_1767524532482/work
-aiosignal @ file:///home/conda/feedstock_root/build_artifacts/aiosignal_1751626463503/work
-alive-progress==3.3.0
-async-timeout @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_async-timeout_1767290444/work
-attrs @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_attrs_1764875182/work
-audioread==3.1.0
-backports.zstd @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_backports.zstd_1767044984/work
-Brotli @ file:///home/conda/feedstock_root/build_artifacts/brotli-split_1764016952863/work
-certifi @ file:///home/conda/feedstock_root/build_artifacts/certifi_1772001073725/work/certifi
-cffi==2.0.0
-charset-normalizer @ file:///home/conda/feedstock_root/build_artifacts/charset-normalizer_1772816396005/work
-colorama==0.4.6
-contourpy @ file:///home/conda/feedstock_root/build_artifacts/contourpy_1744743067588/work
-cycler @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_cycler_1764466758/work
-cyclopts @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_cyclopts_1772733383/work
-decorator==5.2.1
-docstring_parser @ file:///home/conda/feedstock_root/build_artifacts/docstring_parser_1753195641777/work
-docutils @ file:///home/conda/feedstock_root/build_artifacts/docutils_1766092521263/work
-fonttools @ file:///home/conda/feedstock_root/build_artifacts/fonttools_1765632549069/work
-frozenlist @ file:///home/conda/feedstock_root/build_artifacts/frozenlist_1752167142843/work
-graphemeu==0.7.2
-h2 @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_h2_1756364871/work
-hpack @ file:///home/conda/feedstock_root/build_artifacts/hpack_1737618293087/work
-hyperframe @ file:///home/conda/feedstock_root/build_artifacts/hyperframe_1737618333194/work
-idna @ file:///home/conda/feedstock_root/build_artifacts/idna_1760286409563/work
-ImageIO==2.37.2
-joblib==1.5.3
-kiwisolver @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_kiwisolver_1762488741/work
-lazy-loader==0.5
-librosa==0.11.0
-llvmlite==0.46.0
-loguru @ file:///home/conda/feedstock_root/build_artifacts/loguru_1746634721458/work
-markdown-it-py @ file:///home/conda/feedstock_root/build_artifacts/markdown-it-py_1754951200865/work
-matplotlib==3.10.8
-mdurl @ file:///home/conda/feedstock_root/build_artifacts/mdurl_1733255585584/work
-meshio==5.3.5
-msgpack @ file:///home/conda/feedstock_root/build_artifacts/msgpack-python_1762503960095/work
-multidict @ file:///home/conda/feedstock_root/build_artifacts/multidict_1771610691664/work
-munkres==1.1.4
-numba==0.64.0
-numpy @ file:///home/conda/feedstock_root/build_artifacts/numpy_1747544640217/work/dist/numpy-2.2.6-cp310-cp310-linux_x86_64.whl#sha256=d6d964caeef85d00073d27cd62b46883d275b3d8162f723f0fcabbd0b3cc3f9d
-nvidia-ml-py==13.590.48
-opencv-python==4.13.0.92
-packaging @ file:///home/task_176104877067765/conda-bld/packaging_1761049113113/work
-pillow @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_pillow_1770794002/work
-platformdirs @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_platformdirs_1771233827/work
-pooch @ file:///home/conda/feedstock_root/build_artifacts/pooch_1769816439145/work
-propcache @ file:///home/conda/feedstock_root/build_artifacts/propcache_1744524934684/work
-psutil==7.2.2
-pycollada==0.9.3
-pycparser==3.0
-Pygments @ file:///home/conda/feedstock_root/build_artifacts/pygments_1750615794071/work
-PyOpenGL==3.1.10
-PyOpenGL-accelerate==3.1.10
-pyparsing @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_pyparsing_1769003998/work
-PySocks @ file:///home/conda/feedstock_root/build_artifacts/pysocks_1733217236728/work
-python-dateutil @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_python-dateutil_1751104122/work
-pyvista @ file:///home/conda/feedstock_root/build_artifacts/pyvista_1771852787363/work
-requests @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_requests_1766926974/work
-rich @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_rich_1771572730/work/dist
-rich-rst @ file:///home/conda/feedstock_root/build_artifacts/rich-rst_1760519163041/work
-scikit-learn==1.7.2
-scipy==1.15.3
-scooby @ file:///home/conda/feedstock_root/build_artifacts/scooby_1762031574599/work
-six @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_six_1753199211/work
-sounddevice==0.5.5
-soundfile==0.13.1
-soxr==1.0.0
-threadpoolctl==3.6.0
-tomli @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_tomli_1768146676/work
-trimesh==4.11.3
-typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_typing_extensions_1756220668/work
-unicodedata2 @ file:///home/conda/feedstock_root/build_artifacts/unicodedata2_1770908960326/work
-urllib3 @ file:///home/conda/feedstock_root/build_artifacts/urllib3_1767817748113/work
-wslink @ file:///home/conda/feedstock_root/build_artifacts/wslink_1772703976097/work
-yarl @ file:///home/conda/feedstock_root/build_artifacts/yarl_1772409262719/work
+alive-progress>=3.3.0
+backports.zstd>=1.3.0
+Brotli>=1.2.0
+colorama>=0.4.6
+h2>=4.3.0
+ImageIO>=2.37.2
+librosa>=0.11.0
+loguru>=0.7.3
+meshio>=5.3.5
+munkres>=1.1.4
+nvidia-ml-py>=13.590.48
+opencv-python>=4.13.0.92
+psutil>=7.2.2
+pycollada>=0.9.3
+PyOpenGL>=3.1.10
+PyOpenGL-accelerate>=3.1.10
+PySocks>=1.7.1
+pyvista>=0.47.1
+sounddevice>=0.5.5
+trimesh>=4.11.3
+unicodedata2>=17.0.1
+wslink>=2.5.5
