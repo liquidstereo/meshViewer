@@ -79,8 +79,8 @@ CAM_PAN_STEP    = 0.05
 CAM_TRUCK_STEP  = 0.02
 
 # --- Render quality ---
-RENDER_MSAA_SAMPLES     = 0
-RENDER_FXAA             = True
+RENDER_MSAA_SAMPLES     = 8
+RENDER_FXAA             = False
 RENDER_LINE_SMOOTHING   = True
 RENDER_POINT_SMOOTHING  = True
 SAVE_ALPHA              = False

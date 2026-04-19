@@ -170,8 +170,7 @@ If the file is missing, the viewer will still run — Smooth mode falls back to 
 
 ## Default Configuration
 
-- All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
-- For more details, refer to the comments in `configs/settings*.py`.
+All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
 
 **Window**
 
@@ -179,8 +178,8 @@ If the file is missing, the viewer will still run — Smooth mode falls back to 
 |---|---|
 | Width × Height | 1024 × 1024 |
 | Aspect ratio | 1.0 (square) |
-| MSAA samples | 0 (disabled) |
-| FXAA | enabled |
+| MSAA samples | 8 |
+| FXAA | disabled |
 | Monitor index | 0 |
 
 **Playback**
