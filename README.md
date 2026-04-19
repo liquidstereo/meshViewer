@@ -170,7 +170,8 @@ If the file is missing, the viewer will still run — Smooth mode falls back to 
 
 ## Default Configuration
 
-All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
+- All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
+- For more details, refer to the comments in `configs/settings*.py`.
 
 **Window**
 
