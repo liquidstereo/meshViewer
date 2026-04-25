@@ -16,7 +16,7 @@ from configs.settings import (
     AUDIO_FREQ_NORM_MAX, AUDIO_GRID_Y_MAX, AUDIO_FREQ_SAMPLES,
     AUDIO_TIME_RANGE, AUDIO_FOCUS_FREQ_RANGE,
     AUDIO_COLOR_GRID, GRID_WIDTH,
-    DEFAULT_GRID, AUDIO_ISO_AXIS, AUDIO_COLOR_AXIS,
+    SHOW_GRID, AUDIO_ISO_AXIS, AUDIO_COLOR_AXIS,
     AUDIO_ISO_COUNT_DEFAULT, STARTUP_AUDIO_MODE,
     STARTUP_CAM_DEGREE, STARTUP_CAM_POSITION, CAM_TRUCK_STEP,
     SAVE_PBO_ENABLED,
@@ -173,6 +173,10 @@ def load_seq_overlay(plotter, args, total: int) -> None:
             n, total, min(n, total),
         )
     init_sequence_overlay(plotter, seq_files, total)
+    if hasattr(plotter, '_seq_overlay'):
+        plotter._seq_overlay.set_visible(
+            getattr(plotter, '_is_seq_visible', True)
+        )
 
 def apply_hide_info(plotter) -> None:
     apply_overlay_visibility(plotter)
@@ -247,7 +251,7 @@ def build_audio_scene(
     )
     _y_unit = global_max / AUDIO_GRID_Y_MAX
     _t_unit = AUDIO_TIME_RANGE / AUDIO_GRID_Y_MAX
-    if DEFAULT_GRID:
+    if SHOW_GRID:
         plotter.show_grid(
             xtitle=f'FREQUENCY (X{_freq_unit:.1f}Hz)',
             ytitle=f'INTENSITY (X{_y_unit:.2f}dB)',

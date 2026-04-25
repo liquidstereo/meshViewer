@@ -6,6 +6,7 @@ from vtk.util.numpy_support import numpy_to_vtk
 from configs.settings import (
     COLOR_BG, COLOR_MESH_NO_TEX, COLOR_MESH_DEFAULT,
     PBR_METALLIC, PBR_ROUGHNESS, PBR_ANISOTROPY,
+    MESH_MATTE_COLOR,
 )
 from process.mode.common import _set_mesh_input, _resolve_color
 
@@ -73,7 +74,7 @@ def apply_normal(p, mesh, preloaded_tex):
     _use_rgb = getattr(p, '_pt_cloud_use_rgb', True)
     vtx_colors = (
         _pack_vertex_colors(mesh)
-        if not use_tex and _use_rgb else None
+        if not use_tex and _use_rgb and MESH_MATTE_COLOR is None else None
     )
     if vtx_colors is not None:
         _is_prebaked = '_rgb_packed' in mesh.point_data
@@ -98,6 +99,7 @@ def apply_normal(p, mesh, preloaded_tex):
     no_tex = p._is_tex and not p._is_isoline and preloaded_tex is None
     mesh_color = (
         COLOR_BG if p._is_isoline
+        else MESH_MATTE_COLOR if MESH_MATTE_COLOR is not None
         else COLOR_MESH_NO_TEX if no_tex
         else COLOR_MESH_DEFAULT
     )
@@ -142,7 +144,7 @@ def apply_normal(p, mesh, preloaded_tex):
             'Vertex colors active: %d pts (RGB from point_data)',
             len(vtx_colors),
         )
-    prop.SetOpacity(1.0)
+    prop.SetOpacity(getattr(p, '_mesh_opacity', 1.0))
     prop.SetSpecular(0)
     prop.SetRepresentationToSurface()
     if getattr(p, '_n_faces', 1) == 0:

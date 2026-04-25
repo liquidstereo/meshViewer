@@ -11,6 +11,7 @@ from configs.settings import (
     PT_CLOUD_SIZE_DEFAULT,
     PT_CLOUD_SIZE_POINT_WHITE,
     PT_CLOUD_SIZE_DEPTH,
+    MESH_MATTE_COLOR,
 )
 from process.mode.surface import apply_normal
 from process.mode.default import apply_default_reset
@@ -82,6 +83,7 @@ def apply_point_cloud_startup(p) -> None:
         p._pt_cloud_use_rgb = False
         p._pt_cloud_depth = False
         p._pt_cloud_size = PT_CLOUD_SIZE_POINT_WHITE
+        p._pt_cloud_color = 'red'
     elif mode == 'depth':
         p._is_depth = True
         p._pt_cloud_size = PT_CLOUD_SIZE_DEPTH
@@ -238,7 +240,29 @@ def apply_visual_mode(plotter, mesh, preloaded_tex):
             and not getattr(p, '_is_edge', False)
             and not getattr(p, '_is_fnormal', False)):
         t0 = time.perf_counter()
-        if getattr(p, '_is_normal_color', False):
+        if MESH_MATTE_COLOR is not None:
+            _prev = getattr(p, '_prev_mode', None)
+            if not isinstance(_prev, tuple):
+                try:
+                    sp = p._mesh_actor.GetShaderProperty()
+                    sp.ClearAllVertexShaderReplacements()
+                    sp.SetFragmentShaderCode('')
+                except AttributeError:
+                    pass
+                p._prev_mode = None
+                p._depth_fog_gpu = None
+                p._pt_shader_size = -1
+            if p._n_faces == 0:
+                apply_pt_normal(p, mesh)
+                logger.debug(
+                    'apply_matte_pt: %.4fs', time.perf_counter() - t0,
+                )
+            else:
+                apply_normal(p, mesh, preloaded_tex)
+                logger.debug(
+                    'apply_matte_mesh: %.4fs', time.perf_counter() - t0,
+                )
+        elif getattr(p, '_is_normal_color', False):
             apply_normal_color(p, mesh)
             logger.debug(
                 'apply_normal_color: %.4fs',
@@ -279,9 +303,9 @@ def apply_visual_mode(plotter, mesh, preloaded_tex):
             p._mesh_actor.VisibilityOff()
         else:
             apply_normal(p, mesh, preloaded_tex)
-            p._mesh_actor.GetProperty().SetOpacity(
-                FNORMAL_MESH_OPACITY
-            )
+
+            target_opacity = FNORMAL_MESH_OPACITY if getattr(p, '_mesh_opacity', 1.0) > 0.0 else 0.0
+            p._mesh_actor.GetProperty().SetOpacity(target_opacity)
         logger.debug(
             'apply_face_normal: %.4fs', time.perf_counter() - t0
         )

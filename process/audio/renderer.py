@@ -28,8 +28,8 @@ from configs.settings import (
     AUDIO_EDGE_FEATURE_ANGLE,
     AUDIO_FNORMAL_SPATIAL_INTERVAL,
     AUDIO_FNORMAL_SCALE,
-    DEFAULT_BBOX,
-    DEFAULT_BACKFACE,
+    SHOW_BBOX,
+    SHOW_BACKFACE,
     AUDIO_COLOR_BBOX,
     BBOX_WIDTH,
 )
@@ -87,7 +87,7 @@ class WaterfallRenderer:
 
     def init_actors(self) -> None:
         self._init_actors()
-        if DEFAULT_BBOX:
+        if SHOW_BBOX:
             self._setup_bbox()
 
     def switch_mode(self, new_mode: str) -> None:
@@ -182,7 +182,7 @@ class WaterfallRenderer:
         self.body_actor.prop.SetInterpolationToFlat()
 
         self.body_actor.prop.BackfaceCullingOn()
-        if not DEFAULT_BACKFACE:
+        if not SHOW_BACKFACE:
             self.body_actor.VisibilityOff()
 
         scalar_range = update_isoline_and_color(
@@ -227,7 +227,7 @@ class WaterfallRenderer:
         )
         self.main_actor.mapper.SetLookupTable(self._lut)
         prop = self.main_actor.GetProperty()
-        if DEFAULT_BACKFACE:
+        if SHOW_BACKFACE:
             prop.BackfaceCullingOff()
         else:
             prop.BackfaceCullingOn()
@@ -251,7 +251,7 @@ class WaterfallRenderer:
         bm.SetRelativeCoincidentTopologyPolygonOffsetParameters(
             *OFFSET_MESH_BACK
         )
-        if not DEFAULT_BACKFACE:
+        if not SHOW_BACKFACE:
             self.body_actor.VisibilityOff()
 
         self.base_poly.point_data['intensity'] = (
@@ -313,7 +313,7 @@ class WaterfallRenderer:
         self.main_actor.mapper.ScalarVisibilityOn()
         self.main_actor.mapper.SetScalarRange(lo, hi)
         prop = self.main_actor.GetProperty()
-        if DEFAULT_BACKFACE:
+        if SHOW_BACKFACE:
             prop.BackfaceCullingOff()
         else:
             prop.BackfaceCullingOn()
@@ -333,7 +333,7 @@ class WaterfallRenderer:
         bm.SetRelativeCoincidentTopologyPolygonOffsetParameters(
             *OFFSET_MESH_BACK
         )
-        if not DEFAULT_BACKFACE:
+        if not SHOW_BACKFACE:
             self.body_actor.VisibilityOff()
 
         self._edge_filter = vtk.vtkFeatureEdges()
@@ -411,7 +411,7 @@ class WaterfallRenderer:
         bm.SetRelativeCoincidentTopologyPolygonOffsetParameters(
             *OFFSET_MESH_BACK
         )
-        if not DEFAULT_BACKFACE:
+        if not SHOW_BACKFACE:
             self.body_actor.VisibilityOff()
 
         arrow = vtk.vtkArrowSource()
@@ -460,7 +460,7 @@ class WaterfallRenderer:
         mm.SetScalarRange(lo, hi)
         mm.ScalarVisibilityOn()
         prop = self.main_actor.GetProperty()
-        if DEFAULT_BACKFACE:
+        if SHOW_BACKFACE:
             prop.BackfaceCullingOff()
         else:
             prop.BackfaceCullingOn()
@@ -534,7 +534,7 @@ class WaterfallRenderer:
             self.plotter._cmap_range = (lo, hi)
             self.plotter._cmap_title = 'QUALITY'
 
-        if DEFAULT_BBOX and self.bbox_actor is not None:
+        if SHOW_BBOX and self.bbox_actor is not None:
             self._update_bbox()
 
     def toggle_smooth_shading(self) -> bool:

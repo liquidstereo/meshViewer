@@ -141,6 +141,11 @@ def save_frame_to_disk(img: np.ndarray, fname: str) -> None:
         converted = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     elif img.shape[2] == 4:
         params = [cv2.IMWRITE_PNG_COMPRESSION, SAVE_PNG_COMPRESSION]
+        alpha = img[:, :, 3:4].astype(np.float32) / 255.0
+        rgb = (
+            img[:, :, :3].astype(np.float32) * alpha
+        ).clip(0, 255).astype(np.uint8)
+        img = np.concatenate([rgb, img[:, :, 3:4]], axis=2)
         converted = cv2.cvtColor(img, cv2.COLOR_RGBA2BGRA)
     else:
         params = [cv2.IMWRITE_PNG_COMPRESSION, SAVE_PNG_COMPRESSION]

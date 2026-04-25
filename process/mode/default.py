@@ -1,7 +1,7 @@
 import logging
 
 from configs.settings import (
-    DEFAULT_BACKFACE, REDUCTION_MESH,
+    SHOW_BACKFACE, REDUCTION_MESH,
     RENDER_MSAA_SAMPLES, SAVE_ALPHA,
 )
 from process.scene.lighting import apply_lighting
@@ -31,7 +31,7 @@ def apply_default_reset(p) -> None:
     p._pbr_with_tex = False
     p._prev_pbr_tex = None
     p._is_tex = False
-    p._is_backface = DEFAULT_BACKFACE
+    p._is_backface = SHOW_BACKFACE
     p._reduction_mesh = REDUCTION_MESH
     p._prev_mode = None
 

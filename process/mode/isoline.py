@@ -1,42 +1,43 @@
 import logging
 import numpy as np
+import pyvista as pv
 
 from configs.settings import (
-    COLOR_BG, ISOLINE_CONTOUR_MAX_FACES, ISO_NORMAL_OFFSET,
+    COLOR_BG, WIDTH_ISO_LINE, TYPE_TUBE, ISO_NORMAL_OFFSET,
 )
 from process.mode.common import (
-    _hex_to_rgb, _set_mesh_input,
-    _set_flat_line_lighting, _set_actor_transform, _setup_occluder_actor,
-    _get_cam_dir,
+    _hex_to_rgb, _resolve_color, _set_mesh_input,
+    _set_actor_transform, _setup_occluder_actor,
 )
 
 logger = logging.getLogger(__name__)
 
-_CAM_DIR_TOL = 1e-4
+_CAM_DIR_TOL = 0.005
+
+def _get_cam_dir(p) -> np.ndarray:
+    cam = p.renderer.GetActiveCamera()
+    d = np.array(cam.GetDirectionOfProjection())
+    return d / (np.linalg.norm(d) + 1e-12)
 
 def _get_iso_display(p, mesh):
-    if getattr(p, '_cached_iso_display_src', None) is mesh:
+    if getattr(p, '_cached_iso_mesh', None) is mesh:
         return p._cached_iso_display
 
-    p._cached_iso_count = -1
-    p._cached_iso_axis = -1
-    p._cached_iso_cam_dir = None
+    from configs.settings import REDUCTION_MESH
+    display = mesh.copy(deep=True)
+    if REDUCTION_MESH > 0:
+        display = display.decimate(REDUCTION_MESH)
 
-    display = mesh.copy()
-    n_faces = display.n_faces_strict
-    if n_faces > ISOLINE_CONTOUR_MAX_FACES:
-        ratio = max(0.0, 1.0 - ISOLINE_CONTOUR_MAX_FACES / n_faces)
-        if not display.is_all_triangles:
-            display = display.triangulate()
-        display = display.decimate(ratio)
-        logger.debug(
-            'Isoline display decimated: %d -> %d faces (ratio=%.3f)',
-            n_faces, display.n_faces_strict, ratio,
-        )
-
+    p._cached_iso_mesh = mesh
     p._cached_iso_display = display
-    p._cached_iso_display_src = mesh
     return display
+
+def _set_flat_line_lighting(prop):
+    prop.SetLighting(False)
+    prop.SetInterpolationToFlat()
+    prop.SetAmbient(1.0)
+    prop.SetDiffuse(0.0)
+    prop.SetSpecular(0.0)
 
 def apply_isoline(p, mesh):
     iso_count = p._iso_count
@@ -78,39 +79,22 @@ def apply_isoline(p, mesh):
     display.set_active_scalars('Depth')
     contours = display.contour(isosurfaces=iso_count)
 
-    if ISO_NORMAL_OFFSET > 0 and contours.n_points > 0:
-        display_n = display.compute_normals(
-            cell_normals=False, point_normals=True,
-            progress_bar=False,
-        )
-        sampled = contours.sample(display_n, progress_bar=False)
-        normals = sampled.point_data.get('Normals')
-        if normals is not None and normals.shape[0] == contours.n_points:
-            contours.points = (
-                contours.points + normals * ISO_NORMAL_OFFSET
-            )
+    if ISO_NORMAL_OFFSET != 0 and contours.n_points > 0:
+        if 'Normals' not in display.point_data:
+            display.compute_normals(inplace=True)
+
+        contours = contours.probe(display)
+        contours.points += contours.point_data['Normals'] * ISO_NORMAL_OFFSET
+
     p._iso_mapper.SetInputData(contours)
+    p._iso_mapper.SetLookupTable(p._iso_lut)
+    p._iso_mapper.SetScalarRange(display.get_data_range())
 
-    lut = getattr(p, '_iso_lut', None)
-    if lut is not None:
-        if iso_axis == 3:
-            depths = display['Depth']
-            s_min = float(depths.min())
-            s_max = float(depths.max())
-        else:
-            b = mesh.bounds
-            ax = iso_axis
-            s_min, s_max = b[ax * 2], b[ax * 2 + 1]
-        p._iso_mapper.ScalarVisibilityOn()
-        p._iso_mapper.SetLookupTable(lut)
-        p._iso_mapper.SetScalarRange(s_min, s_max)
-        p._cmap_lut = lut
-        p._cmap_range = (s_min, s_max)
-        p._cmap_title = 'ISO'
-    else:
-        p._iso_mapper.ScalarVisibilityOff()
+    prop = p._iso_actor.GetProperty()
+    prop.SetLineWidth(WIDTH_ISO_LINE)
+    prop.SetRenderLinesAsTubes(int(TYPE_TUBE))
+    _set_flat_line_lighting(prop)
 
-    _set_flat_line_lighting(p._iso_actor.GetProperty())
     _set_actor_transform(p._iso_actor, p)
     p._iso_actor.VisibilityOn()
 
@@ -118,12 +102,14 @@ def apply_isoline(p, mesh):
     p._cached_iso_axis = iso_axis
     p._cached_iso_cam_dir = cam_dir
 
+    p._prev_mode = 'isoline'
+
 def apply_iso_occluder(p, mesh):
     if not getattr(p, '_is_backface', True):
         p._mesh_actor.VisibilityOff()
         p._prev_mode = 'iso_occluder'
         return
-    _setup_occluder_actor(p, mesh, polygon_offset=True)
+    _setup_occluder_actor(p, mesh, polygon_offset=False)
     p._prev_mode = 'iso_occluder'
 
 def apply_iso_only(p, mesh):
@@ -137,7 +123,7 @@ def apply_iso_only(p, mesh):
     actor.SetTexture(None)
 
     prop = actor.GetProperty()
-    prop.SetOpacity(1.0)
+    prop.SetOpacity(getattr(p, '_mesh_opacity', 1.0))
     prop.SetColor(*_hex_to_rgb(COLOR_BG))
     prop.SetLighting(False)
     prop.EdgeVisibilityOff()

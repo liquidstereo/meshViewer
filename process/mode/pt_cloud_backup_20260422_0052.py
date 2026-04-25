@@ -12,14 +12,12 @@ from configs.settings import (
     PT_CLOUD_SHADER_SIZE_MIN,
     PT_CLOUD_SHADER_SIZE_MAX,
     PT_CLOUD_DEPTH_CONTRAST,
-    PT_CLOUD_DEPTH_COLOR,
-    POINTS_COLOR,
-    MESH_MATTE_COLOR,
+    COLOR_PT_CLOUD_DEPTH,
     RENDER_MSAA_SAMPLES,
     SAVE_ALPHA,
 )
 from process.mode.surface import _pack_vertex_colors
-from process.mode.common import _set_mesh_input, _hex_to_rgb
+from process.mode.common import _set_mesh_input
 from process.mode.labels import AXIS_NAMES
 
 logger = logging.getLogger(__name__)
@@ -159,9 +157,7 @@ def _apply_pt_fog_gpu(p, mesh, mapper, actor, base_size: float, use_rgb: bool) -
     _color_key = (id(mesh), use_rgb)
     if getattr(p, '_pt_fog_color_key', None) != _color_key:
         raw = _pack_vertex_colors(mesh) if use_rgb else None
-        if raw is None:
-            c = [int(v * 255) for v in _hex_to_rgb(POINTS_COLOR)]
-            raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
+        if raw is None: raw = np.full((mesh.n_points, 3), 255, dtype=np.uint8)
         cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
         p._pt_color_buf = raw
         vtk_c = numpy_to_vtk(raw, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
@@ -172,12 +168,11 @@ def _apply_pt_fog_gpu(p, mesh, mapper, actor, base_size: float, use_rgb: bool) -
     mapper.ScalarVisibilityOn()
     mapper.SetColorModeToDirectScalars()
     actor.SetTexture(None)
-    _opacity = getattr(p, '_mesh_opacity', 1.0)
     prop = actor.GetProperty()
-    prop.SetOpacity(_opacity); prop.SetLighting(False)
+    prop.SetOpacity(1.0); prop.SetLighting(False)
     prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff()
     prop.SetPointSize(base_size); prop.SetInterpolationToFlat()
-    actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
+    actor.VisibilityOn()
     p._prev_mode = 'pt_fog'
 
 def build_pt_fog_lut(p, cmap_name: str) -> np.ndarray:
@@ -208,22 +203,12 @@ def apply_pt_normal(p, mesh) -> None:
         ok = inject_pt_size_shader(actor, _base)
         p._pt_shader_size = _base if ok else 0
     if _shader_size != 0: update_pt_size_uniforms(p, actor)
-    _opacity = getattr(p, '_mesh_opacity', 1.0)
     _color_key = (id(mesh), use_rgb)
-    if getattr(p, '_pt_normal_color_key', None) == _color_key:
-        actor.GetProperty().SetOpacity(_opacity)
-        actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
-        return
+    if getattr(p, '_pt_normal_color_key', None) == _color_key: return
     p._pt_normal_color_key = _color_key
     cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
-    if MESH_MATTE_COLOR is not None:
-        c = [int(v * 255) for v in _hex_to_rgb(MESH_MATTE_COLOR)]
-        raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
-    else:
-        raw = _pack_vertex_colors(mesh) if use_rgb else None
-        if raw is None:
-            c = [int(v * 255) for v in _hex_to_rgb(POINTS_COLOR)]
-            raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
+    raw = _pack_vertex_colors(mesh) if use_rgb else None
+    if raw is None: raw = np.full((mesh.n_points, 3), 255, dtype=np.uint8)
     p._pt_color_buf = raw
     vtk_c = numpy_to_vtk(raw, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
     vtk_c.SetName('PtNormalColors')
@@ -232,10 +217,10 @@ def apply_pt_normal(p, mesh) -> None:
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars()
     actor.SetTexture(None)
     prop = actor.GetProperty()
-    prop.SetOpacity(_opacity); prop.SetLighting(False)
+    prop.SetOpacity(1.0); prop.SetLighting(False)
     prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff()
     prop.SetPointSize(_base); prop.SetInterpolationToFlat()
-    actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
+    actor.VisibilityOn()
     p._prev_mode = 'pt_normal'
 
 def apply_pt_depth(p, mesh) -> None:
@@ -246,31 +231,25 @@ def apply_pt_depth(p, mesh) -> None:
         ok = inject_pt_size_shader(p._mesh_actor, _base)
         p._pt_shader_size = _base if ok else 0
     if _shader_size != 0: update_pt_size_uniforms(p, p._mesh_actor)
-    _opacity = getattr(p, '_mesh_opacity', 1.0)
     _key = pt_cam_key(p, mesh)
-    if getattr(p, '_pt_depth_cache_key', None) == _key:
-        p._mesh_actor.GetProperty().SetOpacity(_opacity)
-        p._mesh_actor.VisibilityOff() if _opacity <= 0.0 else p._mesh_actor.VisibilityOn()
-        return
+    if getattr(p, '_pt_depth_cache_key', None) == _key: return
     p._pt_depth_cache_key = _key
     mapper = p._mesh_mapper; actor = p._mesh_actor; lut = getattr(p, '_pt_depth_lut', None)
     if lut is None: from process.mode.surface import apply_normal; apply_normal(p, mesh, None); return
     saved_axis = getattr(p, '_depth_axis', 3); p._depth_axis = 3; depth = _compute_depth(p, mesh); p._depth_axis = saved_axis
     d_min, d_max = float(depth.min()), float(depth.max()); span = d_max - d_min
     depth_n = np.clip(0.5 + ((depth - d_min) / span - 0.5) * PT_CLOUD_DEPTH_CONTRAST, 0.0, 1.0).astype(np.float32) if span > 1e-12 else np.zeros_like(depth, dtype=np.float32)
-    fog_lut = build_pt_fog_lut(p, PT_CLOUD_DEPTH_COLOR); idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8); blended = fog_lut[idx]
+    fog_lut = build_pt_fog_lut(p, COLOR_PT_CLOUD_DEPTH); idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8); blended = fog_lut[idx]
     cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly'); p._pt_color_buf = blended
     vtk_c = numpy_to_vtk(blended, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
     vtk_c.SetName('PtDepthColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars(); p._cmap_lut = lut; p._cmap_range = (0.0, 1.0); p._cmap_title = f'DEPTH.{AXIS_NAMES[3]}'
     actor.SetTexture(None); prop = actor.GetProperty()
-    prop.SetOpacity(_opacity); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(getattr(p, '_pt_cloud_size', 1)); prop.SetInterpolationToFlat()
-    actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
-    p._prev_mode = 'pt_depth'
+    prop.SetOpacity(1.0); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(getattr(p, '_pt_cloud_size', 1)); prop.SetInterpolationToFlat()
+    actor.VisibilityOn(); p._prev_mode = 'pt_depth'
 
 def apply_pt_fog(p, mesh) -> None:
     from process.mode.depth import _compute_depth
-    _opacity = getattr(p, '_mesh_opacity', 1.0)
     _base = getattr(p, '_pt_cloud_size', PT_CLOUD_SIZE_DEFAULT); use_rgb = getattr(p, '_pt_cloud_use_rgb', False); use_depth_cmap = getattr(p, '_pt_cloud_depth', False); mapper = p._mesh_mapper; actor = p._mesh_actor
     if not use_depth_cmap:
         _fog_gpu = getattr(p, '_pt_fog_gpu', None); _fog_gpu_base = getattr(p, '_pt_fog_gpu_base', -1)
@@ -282,24 +261,17 @@ def apply_pt_fog(p, mesh) -> None:
         ok = inject_pt_size_shader(actor, _base); p._pt_shader_size = _base if ok else 0
     if _shader_size != 0: update_pt_size_uniforms(p, actor)
     _key = (pt_cam_key(p, mesh), use_rgb, use_depth_cmap)
-    if getattr(p, '_pt_fog_cache_key', None) == _key:
-        actor.GetProperty().SetOpacity(_opacity)
-        actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
-        return
+    if getattr(p, '_pt_fog_cache_key', None) == _key: return
     p._pt_fog_cache_key = _key
     saved_axis = getattr(p, '_depth_axis', 3); p._depth_axis = 3; depth = _compute_depth(p, mesh); p._depth_axis = saved_axis
     span = float(depth.max() - depth.min())
     depth_n = np.clip(0.5 + ((depth - depth.min()) / span - 0.5) * PT_CLOUD_DEPTH_CONTRAST, 0.0, 1.0) if span > 1e-12 else np.zeros(mesh.n_points, dtype=np.float32)
     bg_arr = np.array(p.renderer.GetBackground(), dtype=np.float32)
     if use_depth_cmap:
-        fog_lut = build_pt_fog_lut(p, PT_CLOUD_DEPTH_COLOR); idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8); blended = fog_lut[idx]
+        fog_lut = build_pt_fog_lut(p, COLOR_PT_CLOUD_DEPTH); idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8); blended = fog_lut[idx]
     else:
         base_u8 = _pack_vertex_colors(mesh) if use_rgb else None
-        if base_u8 is not None:
-            base = base_u8.astype(np.float32) / 255.0
-        else:
-            c = np.array(_hex_to_rgb(POINTS_COLOR), dtype=np.float32)
-            base = np.full((mesh.n_points, 3), c, dtype=np.float32)
+        base = base_u8.astype(np.float32) / 255.0 if base_u8 is not None else np.ones((mesh.n_points, 3), dtype=np.float32)
         depth_dist = 1.0 - depth_n; _tail = max(1.0 - POINT_FOG_START, 1e-6); t = np.clip((depth_dist - POINT_FOG_START) / _tail, 0.0, 1.0)[:, np.newaxis]
         blended = ((base * (1.0 - t) + bg_arr * t).clip(0.0, 1.0) * 255).astype(np.uint8)
     cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly'); p._pt_color_buf = blended
@@ -307,6 +279,5 @@ def apply_pt_fog(p, mesh) -> None:
     vtk_c.SetName('PtFogColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars()
     actor.SetTexture(None); prop = actor.GetProperty()
-    prop.SetOpacity(_opacity); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(getattr(p, '_pt_cloud_size', 1)); prop.SetInterpolationToFlat()
-    actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
-    p._prev_mode = 'pt_fog'
+    prop.SetOpacity(1.0); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(getattr(p, '_pt_cloud_size', 1)); prop.SetInterpolationToFlat()
+    actor.VisibilityOn(); p._prev_mode = 'pt_fog'

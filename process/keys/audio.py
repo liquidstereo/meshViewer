@@ -7,7 +7,7 @@ import numpy as np
 from configs.colorize import Msg
 from configs.settings import (
     LOG_DIR, ISO_COUNT_STEP, EDGE_FEATURE_ANGLE_STEP,
-    STARTUP_AUDIO_MODE, DEFAULT_BACKFACE, DEFAULT_COLORBAR,
+    STARTUP_AUDIO_MODE, SHOW_BACKFACE, SHOW_COLORBAR,
     AUDIO_SEEK_STEP, OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR,
     AUDIO_ISO_AXIS, AUDIO_COLOR_AXIS,
     AUDIO_ISO_COUNT_DEFAULT, AUDIO_EDGE_FEATURE_ANGLE,
@@ -283,8 +283,8 @@ def register_audio_keys(
             renderer.toggle_smooth_shading()
 
         plotter._cmap_lut = renderer._lut
-        plotter._is_backface = DEFAULT_BACKFACE
-        plotter._is_colorbar = DEFAULT_COLORBAR
+        plotter._is_backface = SHOW_BACKFACE
+        plotter._is_colorbar = SHOW_COLORBAR
         _apply_lighting_for_mode(STARTUP_AUDIO_MODE)
 
         ctx.tab_state = 0
@@ -293,7 +293,7 @@ def register_audio_keys(
         if renderer.bbox_actor is not None:
             renderer.bbox_actor.SetVisibility(True)
         if renderer.body_actor is not None:
-            renderer.body_actor.SetVisibility(DEFAULT_BACKFACE)
+            renderer.body_actor.SetVisibility(SHOW_BACKFACE)
         set_mode_msg('RESET')
         logger.info('Audio mode full reset to defaults')
         plotter.render()
@@ -304,8 +304,8 @@ def register_audio_keys(
             return
         renderer.switch_mode(new_mode)
         plotter._cmap_lut = renderer._lut
-        plotter._is_backface = DEFAULT_BACKFACE
-        plotter._is_colorbar = DEFAULT_COLORBAR
+        plotter._is_backface = SHOW_BACKFACE
+        plotter._is_colorbar = SHOW_COLORBAR
         _apply_lighting_for_mode(new_mode)
         set_mode_msg(new_mode)
         logger.info('Audio mode switched: %s', new_mode)

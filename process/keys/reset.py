@@ -5,9 +5,9 @@ import numpy as np
 from configs.colorize import Msg
 from configs.settings import (
     LOG_DIR,
-    DEFAULT_ANIMATION, DEFAULT_BACKFACE, DEFAULT_BBOX,
-    DEFAULT_GRID, DEFAULT_LIGHTING, DEFAULT_SMOOTH, DEFAULT_TEXTURE,
-    DEFAULT_TURNTABLE,
+    SHOW_ANIMATION, SHOW_BACKFACE, SHOW_BBOX,
+    SHOW_GRID, SHOW_LIGHTING, DEFAULT_SMOOTH, DEFAULT_TEXTURE,
+    SHOW_TURNTABLE,
     ISO_COUNT_DEFAULT, REDUCTION_MESH,
     EDGE_FEATURE_ANGLE, VTX_SPATIAL_INTERVAL,
     OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR, SAVE_FILENAME_EXT,
@@ -175,20 +175,20 @@ def register(p, trigger, set_mode, total_len):
 
     def _reset_all():
         p._idx = 0
-        p._is_playing = DEFAULT_ANIMATION
+        p._is_playing = SHOW_ANIMATION
         p._is_smooth = DEFAULT_SMOOTH
         p._smooth_cycle = 0
         p._pbr_with_tex = False
         p._is_smooth_shading = False
         p._is_wire = False
         p._is_tex = DEFAULT_TEXTURE
-        p._is_grid = DEFAULT_GRID
+        p._is_grid = SHOW_GRID
         p._is_isoline = False
         p._isoline_visible = False
         p._is_iso_only = False
-        p._is_lighting = DEFAULT_LIGHTING
+        p._is_lighting = SHOW_LIGHTING
         apply_lighting(p)
-        p._is_backface = DEFAULT_BACKFACE
+        p._is_backface = SHOW_BACKFACE
         p._vtx_mesh_hidden = False
         p._is_normal_color = False
         p._is_mesh_quality = False
@@ -209,8 +209,8 @@ def register(p, trigger, set_mode, total_len):
         p._reduction_mesh = REDUCTION_MESH
         p._prev_mode = None
         p._rot_elev = 0.0
-        p._is_turntable = DEFAULT_TURNTABLE
-        if DEFAULT_GRID:
+        p._is_turntable = SHOW_TURNTABLE
+        if SHOW_GRID:
             setup_grid(p)
         else:
             p.remove_bounds_axes()
@@ -230,9 +230,9 @@ def register(p, trigger, set_mode, total_len):
         if hasattr(p, '_help_actor'):
             p._help_actor.VisibilityOff()
         p._wire_visible = False
-        p._is_bbox = DEFAULT_BBOX
+        p._is_bbox = SHOW_BBOX
         if hasattr(p, '_bbox_actor'):
-            if DEFAULT_BBOX:
+            if SHOW_BBOX:
                 p._bbox_actor.VisibilityOn()
             else:
                 p._bbox_actor.VisibilityOff()
@@ -448,7 +448,7 @@ def register(p, trigger, set_mode, total_len):
 
     def _apply_view(direction, viewup, label):
         if getattr(p, '_current_view', None) == label:
-            p._is_turntable = DEFAULT_TURNTABLE
+            p._is_turntable = SHOW_TURNTABLE
             _reset_camera()
             set_mode(LBL_RESET_CAM)
             return

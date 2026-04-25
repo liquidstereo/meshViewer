@@ -62,10 +62,14 @@ def compute_window_size(
     system_usage: float,
     est_frame_mb: int = 12,
     min_size: int = 1500,
+    max_size: int | None = None,
 ) -> int:
     total_ram_mb = psutil.virtual_memory().total / (1024 ** 2)
     avail_ram_mb = max(1024, (total_ram_mb - reserved_mb) * system_usage)
-    return max(min_size, int(avail_ram_mb / est_frame_mb))
+    result = max(min_size, int(avail_ram_mb / est_frame_mb))
+    if max_size is not None:
+        result = min(result, max_size)
+    return result
 
 if __name__ == '__main__':
     workers = get_usable_cpu()

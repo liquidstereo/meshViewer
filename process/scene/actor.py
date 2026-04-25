@@ -8,7 +8,7 @@ from configs.settings import (
     WIDTH_ISO_LINE, TYPE_TUBE, COLOR_ISO_LINE,
     COLOR_WIREFRAME, WIDTH_WIREFRAME,
     OFFSET_MESH_BACK,
-    COLOR_MESH_QUALITY, COLOR_DEPTH, COLOR_PT_CLOUD_DEPTH,
+    COLOR_MESH_QUALITY, MESH_DEPTH_COLOR, PT_CLOUD_DEPTH_COLOR,
     EDGE_FEATURE_ANGLE, COLOR_EDGE, WIDTH_EDGE,
     COLOR_BBOX, BBOX_WIDTH,
     VTX_LABEL_COLOR,
@@ -26,6 +26,9 @@ def _init_mesh_iso_wire_actors(plotter) -> None:
     mapper = vtk.vtkPolyDataMapper()
     actor = vtk.vtkActor()
     actor.SetMapper(mapper)
+
+    opacity = getattr(plotter, '_mesh_opacity', 1.0)
+    actor.GetProperty().SetOpacity(opacity)
     plotter.renderer.AddActor(actor)
     plotter._mesh_mapper = mapper
     plotter._mesh_actor = actor
@@ -48,10 +51,10 @@ def _init_mesh_iso_wire_actors(plotter) -> None:
     )
     plotter._quality_lut = _make_vtk_lut(COLOR_MESH_QUALITY)
     plotter._depth_lut = (
-        None if COLOR_DEPTH.startswith('#')
-        else _make_vtk_lut(COLOR_DEPTH)
+        None if MESH_DEPTH_COLOR.startswith('#')
+        else _make_vtk_lut(MESH_DEPTH_COLOR)
     )
-    plotter._pt_depth_lut = _make_vtk_lut(COLOR_PT_CLOUD_DEPTH)
+    plotter._pt_depth_lut = _make_vtk_lut(PT_CLOUD_DEPTH_COLOR)
     iso_actor.VisibilityOff()
     plotter.renderer.AddActor(iso_actor)
     plotter._iso_mapper = iso_mapper

@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass, field
 
 from configs.settings import (
-    DEFAULT_BACKFACE, DEFAULT_COLORBAR, DEFAULT_LIGHTING,
+    SHOW_BACKFACE, SHOW_COLORBAR, SHOW_LIGHTING,
     AUDIO_TARGET_FPS, AUDIO_GRID_Y_MAX,
 )
 
@@ -49,9 +49,9 @@ def init_audio_state(
     plotter._cmap_title = ''
     plotter._input_name = os.path.relpath(audio_path)
     plotter._input_path = plotter._input_name
-    plotter._is_backface  = DEFAULT_BACKFACE
-    plotter._is_colorbar  = DEFAULT_COLORBAR
-    plotter._is_lighting  = DEFAULT_LIGHTING
+    plotter._is_backface  = SHOW_BACKFACE
+    plotter._is_colorbar  = SHOW_COLORBAR
+    plotter._is_lighting  = SHOW_LIGHTING
     plotter._audio_fps    = AUDIO_TARGET_FPS
 
     return AudioContext(

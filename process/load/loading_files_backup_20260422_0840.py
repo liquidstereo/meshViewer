@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 import time
@@ -8,10 +9,6 @@ import threading
 import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import ProcessPoolExecutor, as_completed
-
-from process.load.memory_guard import (
-    release_process_memory, evict_file_cache,
-)
 
 import numpy as np
 import pyvista as pv
@@ -42,8 +39,6 @@ _GLTF_EXTS = {'.glb', '.gltf'}
 
 _CACHE_WORKER_TIMEOUT = 60
 
-_EVICT_RELEASE_INTERVAL = 2.0
-
 _GS_CACHE_FILE = 'gs_cache.npz'
 
 def _dispatch_cache_build(obj_path: str, npz_dir: str) -> None:
@@ -66,28 +61,27 @@ def _check_preload_feasible(
             d = np.load(gs_path)
             n_pts = d['xyz'].shape[0]
 
-            est_mb = n_pts * 15 / (1024 ** 2) * 2.5
+            est_mb = n_pts * 15 / (1024 ** 2) * 1.5
         else:
             pts_path = os.path.join(frame_dir, 'points.npy')
             if not os.path.exists(pts_path):
                 return True
-            est_mb = os.path.getsize(pts_path) / (1024 ** 2) * 2.5
+            est_mb = os.path.getsize(pts_path) / (1024 ** 2) * 1.5
     except Exception:
         return True
     total_est_mb = len(obj_files) * est_mb
     avail_mb = psutil.virtual_memory().available / (1024 ** 2)
-    logger.info(
-        'Preload feasibility check: est %.0fMB vs avail %.0fMB'
-        ' (threshold %.0f%%).',
-        total_est_mb, avail_mb, safety * 100,
-    )
     if total_est_mb > avail_mb * safety:
         logger.warning(
-            'Preload-all disabled: est %.0fMB > %.0f%% avail (%.0fMB).'
+            'Preload-all disabled: est %.0fMB > %.0f%% avail RAM (%.0fMB).'
             ' Switching to sliding window.',
             total_est_mb, safety * 100, avail_mb,
         )
         return False
+    logger.debug(
+        'Preload-all feasible: est %.0fMB vs avail %.0fMB.',
+        total_est_mb, avail_mb,
+    )
     return True
 
 def _build_one_subprocess(obj_path: str, npz_dir: str) -> None:
@@ -296,7 +290,6 @@ def _build_gs_npz(obj_path: str, npz_dir: str) -> None:
             sh=sh,
             color=color,
         )
-        evict_file_cache(cache_path)
     except Exception as e:
         _log.error('GS cache build failed [%s]: %s', obj_path, e)
         raise
@@ -325,22 +318,17 @@ def _build_single_npz(obj_path, npz_dir):
             faces = mesh.faces
             if int(faces.max()) < np.iinfo(np.int32).max:
                 faces = faces.astype(np.int32)
-            _p = os.path.join(frame_dir, 'faces.npy')
-            np.save(_p, faces)
-            evict_file_cache(_p)
+            np.save(os.path.join(frame_dir, 'faces.npy'), faces)
         for key in mesh.point_data.keys():
-            _p = os.path.join(frame_dir, f'pd_{key}.npy')
-            np.save(_p, mesh.point_data[key])
-            evict_file_cache(_p)
+            np.save(
+                os.path.join(frame_dir, f'pd_{key}.npy'),
+                mesh.point_data[key],
+            )
         tc = mesh.active_texture_coordinates
         if tc is not None:
-            _p = os.path.join(frame_dir, 'tcoords.npy')
-            np.save(_p, tc)
-            evict_file_cache(_p)
+            np.save(os.path.join(frame_dir, 'tcoords.npy'), tc)
 
-        _p = os.path.join(frame_dir, 'points.npy')
-        np.save(_p, mesh.points)
-        evict_file_cache(_p)
+        np.save(os.path.join(frame_dir, 'points.npy'), mesh.points)
     except Exception as e:
         _log.error('Frame cache build failed [%s]: %s', obj_path, e)
         raise
@@ -421,7 +409,6 @@ class FrameBuffer:
         )
         self._pending_mesh = set()
         self._pending_tex = set()
-        self._last_evict_release = 0.0
 
         input_dir = os.path.dirname(obj_files[0])
         if len(obj_files) == 1:
@@ -512,7 +499,7 @@ class FrameBuffer:
             self._tex_cache.clear()
             self._pending_mesh.clear()
             self._pending_tex.clear()
-        release_process_memory('cleanup')
+        gc.collect()
         logger.info('FrameBuffer cleanup COMPLETE')
 
     def _preload_all_meshes(self) -> None:
@@ -561,7 +548,7 @@ class FrameBuffer:
             'All %d meshes preloaded in %.2fs.',
             total, time.perf_counter() - t0,
         )
-        release_process_memory('preload_complete')
+        gc.collect()
         self._max_points = 0
         with self._lock:
             vals = list(self._mesh_cache.values())
@@ -729,41 +716,33 @@ class FrameBuffer:
             len(missing), workers,
         )
 
-        total = len(missing)
-        chunk_size = max(1, (total + 1) // 2)
         err_count = 0
         try:
             with alive_bar(
-                total, spinner=None,
-                title='INITIALIZING FRAME CACHE...',
+                len(missing), spinner=None,
+                title='INITIALIZING FILE CACHE...',
                 title_length=25, length=15,
                 dual_line=True, stats=True,
                 elapsed=True, manual=False,
-                enrich_print=False, force_tty=True,
+                enrich_print=True, force_tty=True,
             ) as bar:
-                for i in range(0, total, chunk_size):
-                    chunk = missing[i : i + chunk_size]
-                    with ThreadPoolExecutor(max_workers=workers) as exe:
-                        futures = {
-                            exe.submit(
-                                _dispatch_cache_build, f, self._npz_dir
-                            ): f
-                            for f in chunk
-                        }
-                        for fut in as_completed(futures):
-                            try:
-                                fut.result()
-                            except Exception as e:
-                                err_count += 1
-                                logger.error(
-                                    'Cache build error [%s]: %s',
-                                    futures[fut], e,
-                                )
-                            bar()
-
-                    release_process_memory(
-                        f'{min(i + chunk_size, total)}/{total}'
-                    )
+                with ThreadPoolExecutor(max_workers=workers) as exe:
+                    futures = {
+                        exe.submit(
+                            _dispatch_cache_build, f, self._npz_dir
+                        ): f
+                        for f in missing
+                    }
+                    for fut in as_completed(futures):
+                        try:
+                            fut.result()
+                        except Exception as e:
+                            err_count += 1
+                            logger.error(
+                                'Cache build error [%s]: %s',
+                                futures[fut], e,
+                            )
+                        bar()
 
         except KeyboardInterrupt:
             logger.warning('Frame cache build interrupted.')
@@ -777,7 +756,7 @@ class FrameBuffer:
                 err_count,
             )
 
-        logger.info('Frame cache build completed.')
+        gc.collect()
 
     def _load_mesh(self, idx):
 
@@ -919,7 +898,6 @@ class FrameBuffer:
         lo = center_idx - half
         hi = center_idx + half
 
-        evicted = 0
         with self._lock:
             for cache in (
                 self._mesh_cache, self._tex_cache
@@ -930,13 +908,6 @@ class FrameBuffer:
                 ]
                 for k in evict_keys:
                     del cache[k]
-                evicted += len(evict_keys)
-
-        if evicted:
-            now = time.monotonic()
-            if now - self._last_evict_release >= _EVICT_RELEASE_INTERVAL:
-                self._last_evict_release = now
-                release_process_memory('evict')
 
 def load_audio_data(
     audio_path: str,

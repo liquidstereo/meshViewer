@@ -335,6 +335,40 @@ AUDIO_SEEK_STEP = 30
 Long silent sections may flatten the waveform. This is expected behavior — amplitude is
 normalized globally via `global_max`. No action needed.
 
+### High Memory Usage or OOM with Large Point Cloud Sequences
+
+When loading large Gaussian Splat PLY sequences (1,000+ frames, 500k+ points per
+frame), memory consumption may be significant.
+
+The viewer automatically estimates required memory and switches from full preload to
+sliding-window mode when loading would exceed ~70% of available RAM. No manual
+intervention is required in most cases.
+
+To force sliding-window mode explicitly:
+
+In `configs/settings.py`:
+```python
+DEFAULT_PRELOAD_ALL = False
+```
+
+To reduce worker memory pressure further, lower the system resource ratio:
+
+In `configs/settings.py`:
+```python
+DEFAULT_SYSTEM_USAGE = 0.50  # default: 0.80; recommended 0.50–0.60 on low-end systems
+```
+
+---
+
+## Updates
+
+### Performance
+
+- **GS PLY sequence cache build speed improved ~2.4×** — VTK's C++ PLY reader is
+  bypassed in favor of a pure-Python parser (`plyfile`), eliminating a random worker
+  hang with large Gaussian Splat PLY files (62-property, ~47 MB per frame) and
+  reducing cache build time from ~4 min to ~1 min 35 sec (1,341-frame benchmark).
+
 ---
 
 ## Notes

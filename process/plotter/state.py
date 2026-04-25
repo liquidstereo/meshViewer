@@ -2,8 +2,9 @@ import os
 import time
 
 from configs.settings import (
-    DEFAULT_GRID, DEFAULT_BBOX, DEFAULT_BACKFACE, DEFAULT_LIGHTING,
-    DEFAULT_TURNTABLE, DEFAULT_COLORBAR,
+    SHOW_GRID, SHOW_BBOX, SHOW_BACKFACE, SHOW_LIGHTING,
+    SHOW_TURNTABLE, SHOW_COLORBAR, SHOW_IMAGE_SEQUENCE,
+    SHOW_MESH,
     EDGE_FEATURE_ANGLE,
     ISO_COUNT_DEFAULT, REDUCTION_MESH,
     VTX_SPATIAL_INTERVAL,
@@ -73,13 +74,14 @@ def init_plotter_state(plotter, args) -> None:
     plotter._wire_axis = 3
     plotter._wire_visible = False
     plotter._is_tex = args.texture
-    plotter._is_grid = DEFAULT_GRID
-    plotter._is_bbox = DEFAULT_BBOX
+    plotter._is_grid = SHOW_GRID
+    plotter._is_bbox = SHOW_BBOX
     plotter._is_isoline = False
     plotter._isoline_visible = False
     plotter._is_iso_only = False
-    plotter._is_lighting = DEFAULT_LIGHTING
-    plotter._is_backface = DEFAULT_BACKFACE
+    plotter._is_lighting = SHOW_LIGHTING
+    plotter._is_backface = SHOW_BACKFACE
+    plotter._mesh_opacity = 1.0 if SHOW_MESH else 0.0
     plotter._vtx_mesh_hidden = False
     plotter._is_normal_color = False
     plotter._is_mesh_quality = False
@@ -98,7 +100,7 @@ def init_plotter_state(plotter, args) -> None:
     plotter._iso_axis = 3
     plotter._reduction_mesh = REDUCTION_MESH
     plotter._rot_elev = 0.0
-    plotter._is_turntable = DEFAULT_TURNTABLE
+    plotter._is_turntable = SHOW_TURNTABLE
     plotter._needs_update = True
     plotter._fps = 0.0
     plotter._n_points = 0
@@ -107,7 +109,8 @@ def init_plotter_state(plotter, args) -> None:
     plotter._quality_cache_n_faces = -1
     plotter._quality_cache_range = None
     plotter._quality_vtk_poly = None
-    plotter._is_colorbar = DEFAULT_COLORBAR
+    plotter._is_colorbar = SHOW_COLORBAR
+    plotter._is_seq_visible = SHOW_IMAGE_SEQUENCE
     plotter._is_overlay_visible = not getattr(args, 'hide_info', False)
     plotter._overlay_prev_vis = {}
     plotter._mode_msg = ''

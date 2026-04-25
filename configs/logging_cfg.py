@@ -48,6 +48,3 @@ def setup_logging(
     vtk_win.SetFileName(vtk_log_path)
     vtk_win.SetFlush(True)
     _vtk.vtkOutputWindow.SetInstance(vtk_win)
-    logging.getLogger(__name__).info(
-        'VTK output window: %s', vtk_log_path
-    )

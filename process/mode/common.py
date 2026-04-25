@@ -136,7 +136,7 @@ def _setup_occluder_actor(p, mesh, polygon_offset: bool = False) -> None:
         )
     actor.SetTexture(None)
     prop = actor.GetProperty()
-    prop.SetOpacity(1.0)
+    prop.SetOpacity(getattr(p, '_mesh_opacity', 1.0))
     prop.SetColor(*_hex_to_rgb(COLOR_BG))
     prop.SetLighting(False)
     prop.SetInterpolationToFlat()

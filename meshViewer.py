@@ -7,8 +7,8 @@ import psutil
 
 from configs.settings import (
     INPUT_DIR_ROOT, OUTPUT_DIR_ROOT, MESH_DIR_ROOT, SEQUENCE_DIR_ROOT,
-    DEFAULT_ANIMATION, DEFAULT_SMOOTH, DEFAULT_TEXTURE, DEFAULT_PRELOAD_ALL,
-    DEFAULT_HIDE_INFO,
+    SHOW_ANIMATION, DEFAULT_SMOOTH, DEFAULT_TEXTURE, DEFAULT_PRELOAD_ALL,
+    SHOW_HIDE_INFO,
     MESH_EXTENSIONS,
     AUDIO_EXTENSIONS, AUDIO_DIR_ROOT, SCREENSHOT_SUBDIR,
 )
@@ -36,7 +36,7 @@ def parse_args():
                         const='', default=None)
     parser.add_argument('-c',   '--continuous', action='store_true', default=False)
     parser.add_argument('--no-cache',           action='store_true', default=False)
-    parser.add_argument('--hide-info',          action='store_true', default=DEFAULT_HIDE_INFO)
+    parser.add_argument('--hide-info',          action='store_true', default=SHOW_HIDE_INFO)
     parser.add_argument('-v',   '--verbose', action='store_true', default=False)
     parser.add_argument('-r',   '--range',   type=str, default=None,
                         metavar='START-END')
@@ -60,7 +60,7 @@ def parse_args():
         parser.error(f'Images path not found: {args.images}')
 
     args.texture     = DEFAULT_TEXTURE
-    args.animation   = DEFAULT_ANIMATION
+    args.animation   = SHOW_ANIMATION
     args.smooth      = DEFAULT_SMOOTH
     args.preload_all = DEFAULT_PRELOAD_ALL
     args.frame_start = 0

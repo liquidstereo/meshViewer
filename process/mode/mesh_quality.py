@@ -1,33 +1,36 @@
 import logging
-
 import numpy as np
 import vtk
-from vtk.util.numpy_support import numpy_to_vtk
+import pyvista as pv
 
-from configs.settings import MESH_QUALITY_METRIC
+from configs.settings import (
+    REDUCTION_MESH_QUALITY,
+)
+from process.mode.common import _set_mesh_input
 
 logger = logging.getLogger(__name__)
 
-_QUALITY_ARR = '_MQ'
-
 def apply_mesh_quality(p, mesh):
-    n_faces = mesh.n_faces_strict
-    if p._quality_cache is None or p._quality_cache_n_faces != n_faces:
-        _rebuild_quality_cache(p, mesh, n_faces)
+    q_range = (1.0, 5.0)
 
-    poly = p._quality_vtk_poly
-    poly.SetPoints(mesh.GetPoints())
-    poly.SetPolys(mesh.GetPolys())
-    poly.Modified()
+    if (p._prev_mode == 'mesh_quality'
+            and getattr(p, '_last_mesh_for_quality', None) is mesh):
+        return
 
-    q_range = p._quality_cache_range
+    qual = mesh.compute_cell_quality(measure='aspect_ratio')
+    if REDUCTION_MESH_QUALITY > 0:
+        qual = qual.decimate(REDUCTION_MESH_QUALITY)
+
+    qual = qual.cell_data_to_point_data()
+    q_scalars = qual.point_data['Quality']
+
     mapper = p._mesh_mapper
     actor = p._mesh_actor
 
-    mapper.SetInputData(poly)
-    mapper.SetColorModeToMapScalars()
-    mapper.SetScalarModeToUseCellData()
-    mapper.SelectColorArray(_QUALITY_ARR)
+    cached = _set_mesh_input(mapper, qual, p, '_cached_mesh_poly')
+    cached.GetPointData().SetScalars(q_scalars)
+    cached.GetPointData().Modified()
+
     mapper.ScalarVisibilityOn()
     mapper.SetLookupTable(p._quality_lut)
     mapper.SetScalarRange(*q_range)
@@ -37,7 +40,7 @@ def apply_mesh_quality(p, mesh):
 
     actor.SetTexture(None)
     prop = actor.GetProperty()
-    prop.SetOpacity(1.0)
+    prop.SetOpacity(getattr(p, '_mesh_opacity', 1.0))
     prop.SetLighting(True)
     prop.SetRepresentationToSurface()
     prop.EdgeVisibilityOff()
@@ -51,31 +54,5 @@ def apply_mesh_quality(p, mesh):
         prop.BackfaceCullingOff()
 
     actor.VisibilityOn()
+    p._last_mesh_for_quality = mesh
     p._prev_mode = 'mesh_quality'
-
-def _rebuild_quality_cache(p, mesh, n_faces: int) -> None:
-    quality_mesh = mesh.cell_quality(quality_measure=MESH_QUALITY_METRIC)
-
-    q_arr = None
-    for v in quality_mesh.cell_data.values():
-        if v.ndim == 1 and len(v) == n_faces:
-            q_arr = v
-            break
-    if q_arr is None:
-        q_arr = quality_mesh.active_scalars
-
-    q_np = np.asarray(q_arr, dtype=np.float32)
-    q_range = (float(q_np.min()), float(q_np.max()))
-
-    vtk_arr = numpy_to_vtk(q_np, deep=True, array_type=vtk.VTK_FLOAT)
-    vtk_arr.SetName(_QUALITY_ARR)
-
-    quality_poly = vtk.vtkPolyData()
-    quality_poly.GetCellData().AddArray(vtk_arr)
-    quality_poly.GetCellData().SetActiveScalars(_QUALITY_ARR)
-
-    p._quality_cache = q_np
-    p._quality_cache_n_faces = n_faces
-    p._quality_cache_range = q_range
-    p._quality_vtk_poly = quality_poly
-    logger.debug('mesh_quality: cache miss, n_faces=%d', n_faces)

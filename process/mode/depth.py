@@ -5,7 +5,8 @@ import matplotlib.cm as _cm
 from vtk.util.numpy_support import numpy_to_vtk
 
 from configs.settings import (
-    DEPTH_SHADING_FLAT, DEPTH_ENABLE_LIGHTING, COLOR_DEPTH,
+    DEPTH_SHADING_FLAT, DEPTH_ENABLE_LIGHTING,
+    MESH_DEPTH_COLOR, PT_CLOUD_DEPTH_COLOR,
     POINT_FOG, POINT_FOG_START, PT_CLOUD_DEPTH_CONTRAST,
     PT_CLOUD_SHADER_SCALE, PT_CLOUD_SHADER_SIZE_MIN, PT_CLOUD_SHADER_SIZE_MAX,
     PT_CLOUD_SIZE_DEFAULT,
@@ -16,9 +17,9 @@ from process.mode.labels import AXIS_NAMES
 logger = logging.getLogger(__name__)
 
 _LUT_DEPTH: 'np.ndarray | None' = (
-    None if COLOR_DEPTH.startswith('#')
+    None if MESH_DEPTH_COLOR.startswith('#')
     else (
-        _cm.get_cmap(COLOR_DEPTH)(np.linspace(0, 1, 256))[:, :3] * 255
+        _cm.get_cmap(MESH_DEPTH_COLOR)(np.linspace(0, 1, 256))[:, :3] * 255
     ).astype(np.uint8)
 )
 
@@ -29,29 +30,30 @@ def _compute_bbox_depth_range(p, mesh) -> tuple:
          for x in (b[0], b[1])
          for y in (b[2], b[3])
          for z in (b[4], b[5])],
-        dtype=np.float32,
+        dtype=np.float64,
     )
-    s = getattr(p, '_norm_scale', 1.0)
+    s = float(getattr(p, '_norm_scale', 1.0))
     c = np.array(
-        getattr(p, '_norm_center', [0.0, 0.0, 0.0]), dtype=np.float32,
+        getattr(p, '_norm_center', [0.0, 0.0, 0.0]), dtype=np.float64,
     )
     world = s * corners + (1.0 - s) * c
     cam = p.renderer.GetActiveCamera()
-    cam_dir = np.array(cam.GetDirectionOfProjection(), dtype=np.float32)
+    cam_dir = np.array(cam.GetDirectionOfProjection(), dtype=np.float64)
     cam_dir /= np.linalg.norm(cam_dir) + 1e-12
-    cam_pos = np.array(cam.GetPosition(), dtype=np.float32)
+    cam_pos = np.array(cam.GetPosition(), dtype=np.float64)
     depths = -np.dot(world - cam_pos, cam_dir)
     return float(depths.min()), float(depths.max())
 
-def _build_depth_frag_code(fog: bool = True) -> str:
-    if COLOR_DEPTH.startswith('#'):
-        r, g, b = _hex_to_rgb(COLOR_DEPTH)
+def _build_depth_frag_code(fog: bool = True, is_pc: bool = False) -> str:
+    _color = PT_CLOUD_DEPTH_COLOR if is_pc else MESH_DEPTH_COLOR
+    if _color.startswith('#'):
+        r, g, b = _hex_to_rgb(_color)
         lut_body = ', '.join(
             f'vec3({r:.4f},{g:.4f},{b:.4f})' for _ in range(256)
         )
     else:
         t_vals = np.linspace(0, 1, 256, dtype=np.float32)
-        cols = _cm.get_cmap(COLOR_DEPTH)(t_vals)[:, :3]
+        cols = _cm.get_cmap(_color)(t_vals)[:, :3]
         lut_body = ', '.join(
             f'vec3({c[0]:.4f},{c[1]:.4f},{c[2]:.4f})' for c in cols
         )
@@ -102,7 +104,7 @@ def _build_depth_frag_code(fog: bool = True) -> str:
 def inject_depth_gpu_shader(
     actor, is_pc: bool = False, base_size: float = 1.0, fog: bool = True,
 ) -> bool:
-    code = _build_depth_frag_code(fog=fog)
+    code = _build_depth_frag_code(fog=fog, is_pc=is_pc)
     try:
         sp = actor.GetShaderProperty()
         try:
@@ -168,17 +170,18 @@ def _depth_cam_key(p, mesh) -> tuple:
         bg,
     )
 
-def _build_depth_fog_lut(p) -> np.ndarray:
+def _build_depth_fog_lut(p, is_pc: bool = False) -> np.ndarray:
     bg = tuple(p.renderer.GetBackground())
-    key = ('depth', bg)
+    key = ('depth', bg, is_pc)
     if getattr(p, '_depth_fog_lut_key', None) == key:
         return p._depth_fog_lut_cache
+    _color = PT_CLOUD_DEPTH_COLOR if is_pc else MESH_DEPTH_COLOR
     t_vals = np.linspace(0, 1, 256, dtype=np.float32)
-    if COLOR_DEPTH.startswith('#'):
-        base_c = np.array(_hex_to_rgb(COLOR_DEPTH), dtype=np.float32)
+    if _color.startswith('#'):
+        base_c = np.array(_hex_to_rgb(_color), dtype=np.float32)
         colors = np.tile(base_c, (256, 1))
     else:
-        colors = _cm.get_cmap(COLOR_DEPTH)(t_vals)[:, :3].astype(np.float32)
+        colors = _cm.get_cmap(_color)(t_vals)[:, :3].astype(np.float32)
     bg_arr = np.array(bg, dtype=np.float32)
     dc = np.clip(0.5 + (t_vals - 0.5) * PT_CLOUD_DEPTH_CONTRAST, 0.0, 1.0)
     colors_mult = colors * dc[:, np.newaxis]
@@ -254,7 +257,7 @@ def apply_depth(p, mesh):
             mapper.ScalarVisibilityOff()
             actor.SetTexture(None)
             prop = actor.GetProperty()
-            prop.SetOpacity(1.0)
+            prop.SetOpacity(getattr(p, '_mesh_opacity', 1.0))
             prop.SetLighting(False)
             prop.SetRepresentationToSurface()
             prop.EdgeVisibilityOff()
@@ -291,7 +294,7 @@ def apply_depth(p, mesh):
         cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
 
         if _fog_active:
-            fog_lut = _build_depth_fog_lut(p)
+            fog_lut = _build_depth_fog_lut(p, is_pc=is_pc)
             idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8)
             blended = fog_lut[idx]
             p._depth_color_buf = blended
@@ -319,9 +322,10 @@ def apply_depth(p, mesh):
     p._cmap_lut = lut
     p._cmap_range = (d_min, d_max)
     p._cmap_title = f'DEPTH.{AXIS_NAMES[axis]}'
+    _opacity = getattr(p, '_mesh_opacity', 1.0)
     actor.SetTexture(None)
     prop = actor.GetProperty()
-    prop.SetOpacity(1.0)
+    prop.SetOpacity(_opacity)
     prop.SetLighting(DEPTH_ENABLE_LIGHTING)
     prop.SetRepresentationToSurface()
     prop.EdgeVisibilityOff()
@@ -335,5 +339,5 @@ def apply_depth(p, mesh):
         prop.BackfaceCullingOn()
     else:
         prop.BackfaceCullingOff()
-    actor.VisibilityOn()
+    actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
     p._prev_mode = 'depth'

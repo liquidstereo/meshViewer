@@ -36,7 +36,7 @@ def apply_normal_color(p, mesh):
     actor.SetTexture(None)
 
     prop = actor.GetProperty()
-    prop.SetOpacity(1.0)
+    prop.SetOpacity(getattr(p, '_mesh_opacity', 1.0))
     prop.SetLighting(NORMAL_COLOR_ENABLE_LIGHTING)
     prop.SetRepresentationToSurface()
     prop.EdgeVisibilityOff()

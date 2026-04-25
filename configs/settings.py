@@ -51,7 +51,8 @@ _avail_ram_mb = max(
 
 # --- Frame buffer ---
 DEFAULT_PRELOAD_ALL     = True
-DEFAULT_WINDOW_SIZE     = max(1500, int(_avail_ram_mb / 12))
+DEFAULT_MAX_WINDOW_SIZE = 1500
+DEFAULT_WINDOW_SIZE     = max(DEFAULT_MAX_WINDOW_SIZE, int(_avail_ram_mb / 12))
 DEFAULT_PRELOAD_AHEAD   = round(DEFAULT_WINDOW_SIZE * 0.875)
 PRELOAD_BACK_RATIO      = 0.50
 EVICT_MEMORY_THRESHOLD  = 0.875
@@ -87,6 +88,7 @@ SAVE_ALPHA              = False
 
 # --- Colors ---
 COLOR_BG         = '#111111'
+MESH_MATTE_COLOR = None
 
 # --- Grid & bounding box ---
 COLOR_GRID       = '#7A7A7A'
@@ -116,14 +118,16 @@ STARTUP_FOCAL_LENGTH    = None
 STARTUP_ZOOM            = None
 
 # --- Default state ---
-DEFAULT_GRID        = True
-DEFAULT_BBOX        = True
-DEFAULT_BACKFACE    = True
-DEFAULT_LIGHTING    = False
-DEFAULT_ANIMATION   = True
-DEFAULT_TURNTABLE   = True
-DEFAULT_HIDE_INFO   = False
-DEFAULT_COLORBAR    = True
+SHOW_GRID        = True
+SHOW_BBOX        = True
+SHOW_BACKFACE    = True
+SHOW_LIGHTING    = False
+SHOW_ANIMATION   = True
+SHOW_TURNTABLE   = True
+SHOW_HIDE_INFO   = False
+SHOW_COLORBAR       = True
+SHOW_IMAGE_SEQUENCE = False
+SHOW_MESH           = True
 
 # --- Animation timing ---
 TARGET_ANIM_FPS         = 30
