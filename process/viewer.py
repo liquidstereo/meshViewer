@@ -27,7 +27,7 @@ from process.load import FrameBuffer, show_loading, hide_loading, detect_geometr
 from process.apply_mode import (  # noqa: F401
     apply_point_cloud_startup, _apply_axis_transform,
 )
-from process.load.loading_files import load_audio_data
+from process.load.load_audio import load_audio_data
 from process.plotter import (
     build_plotter,
     init_plotter_state,
@@ -72,12 +72,22 @@ def create_plotter() -> Plotter:
     logger.debug('Plotter init: %.4fs', time.perf_counter() - t)
     return plotter
 
+def detect_file_type(first_file: str) -> str:
+    ext = os.path.splitext(first_file)[1].lower()
+    if ext in ('.npy', '.npz'):
+        return 'np_data'
+    return detect_geometry_type(first_file)
+
 def apply_input_format(plotter, first_file: str) -> None:
     t = time.perf_counter()
+    ext = os.path.splitext(first_file)[1].lower()
+    if ext in ('.npy', '.npz'):
+        plotter._is_np_data = True
     geo_type = detect_geometry_type(first_file)
     logger.info(
-        'Input geometry type: %s [%s]',
+        'Input geometry type: %s [%s]%s',
         geo_type, os.path.basename(first_file),
+        ' [NP]' if plotter._is_np_data else '',
     )
     if geo_type == 'point_cloud':
         apply_point_cloud_startup(plotter)

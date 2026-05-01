@@ -4,6 +4,43 @@ A PyVista/VTK-based interactive 3D mesh viewer built on OpenGL, supporting stati
 
 ---
 
+## Updates
+
+### New Feature
+
+- **NumPy array (`.npy` / `.npz`) file playback support** — Single-file and
+  sequence-directory loading is supported. Array shapes are handled automatically:
+  `(N, 3)` → XYZ point cloud, `(N, 6)` → XYZ+RGB point cloud, `(H, W)` → depth map
+  rendered as a point cloud or surface mesh (toggle via `NPY_AS_POINTCLOUD` in
+  `configs/settings_np_data.py`; default: point cloud).
+  Cache is built on first load; run with `--no-cache` once after switching modes.
+
+- **NPZ/NPY depth map normalization** — New constants `DATA_NORMALIZE_LOG` and
+  `DATA_NORMALIZE_AXIS` in `configs/settings_np_data.py` improve depth distribution
+  for sequences with heavily skewed Z ranges (e.g., city-scale depth scans).
+  `DATA_NORMALIZE_LOG = True` applies a log1p transform before normalization;
+  `DATA_NORMALIZE_AXIS = 'per_axis'` normalizes each axis independently.
+  Requires `--no-cache` rebuild after changing either value.
+
+- **Per-type axis and flip settings** — `STARTUP_AXIS`, `STARTUP_REVERSE_*_AXIS`,
+  and `FLIP_OBJECT_*` can now be overridden independently per input type via
+  prefixed constants in each settings file (`MESH_STARTUP_AXIS`,
+  `PT_STARTUP_AXIS`, `NP_STARTUP_AXIS`, `AUDIO_STARTUP_AXIS`, etc.).
+  Set to `None` (default) to fall back to the shared value in `configs/settings.py`.
+
+### Performance
+
+- **GS PLY sequence cache build speed improved ~2.4×** — VTK's C++ PLY reader is
+  bypassed in favor of a pure-Python parser (`plyfile`), eliminating a random worker
+  hang with large Gaussian Splat PLY files (62-property, ~47 MB per frame) and
+  reducing cache build time from ~4 min to ~1 min 35 sec (1,341-frame benchmark).
+
+- **Render loop optimized** — Internal `plotter.update()` call replaced with
+  `plotter.iren.process_events()`, removing a redundant conditional render per
+  frame and improving steady-state FPS by ~33%.
+
+---
+
 ## Overview
 
 MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio visualization tool built on PyVista and VTK (Visualization Toolkit). It supports 11+ mesh formats and 8+ audio formats, and is optimized for seamless playback of time-series frame data as well as static models.
@@ -20,7 +57,7 @@ MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio vis
 
 **Supported Formats**
 
-- **Mesh:** OBJ · PLY · STL · VTP · VTK · OFF · GLB · GLTF · DAE · 3DS · BYU
+- **Mesh:** OBJ · PLY · STL · VTP · VTK · OFF · GLB · GLTF · DAE · 3DS · BYU · NPY · NPZ
 - **Texture:** JPG · JPEG · PNG · BMP · TIF · TIFF · TGA
 - **Audio:** WAV · MP3 · FLAC · OGG · AAC · M4A · AIF · AIFF
 
@@ -171,6 +208,9 @@ If the file is missing, the viewer will still run — Smooth mode falls back to 
 ## Default Configuration
 
 All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
+Input-type-specific settings are in `configs/settings_mesh.py`,
+`configs/settings_point_cloud.py`, `configs/settings_np_data.py`, and
+`configs/settings_audio.py`.
 
 **Window**
 
@@ -277,12 +317,21 @@ All defaults are defined in `configs/settings.py` and `configs/keybinding.py`.
 
 ### Black Screen or Flickering
 
-Caused by an FXAA/MSAA conflict on certain GPU drivers.
+Enabling FXAA and MSAA simultaneously causes conflicts on certain GPU drivers.
+The defaults are already configured to avoid this (`RENDER_FXAA = False`,
+`RENDER_MSAA_SAMPLES = 8`). If you changed these settings, restore the defaults
+in `configs/settings.py`:
 
-In `configs/settings.py`:
 ```python
-RENDER_FXAA         = False
+RENDER_FXAA         = False   # do not enable while MSAA is active
 RENDER_MSAA_SAMPLES = 8
+```
+
+To use FXAA instead of MSAA, disable MSAA first:
+
+```python
+RENDER_FXAA         = True
+RENDER_MSAA_SAMPLES = 0
 ```
 
 ### Slow Initial Load
@@ -321,6 +370,23 @@ To permanently clear the cache, delete the `input/cache/` directory.
 - If both a subdirectory and a root-level file exist for the same stem, an error is
   raised — remove one
 
+### NPZ / NPY Depth Map Appears Flat
+
+The Z distribution may be heavily skewed (e.g., most points near one depth extreme).
+Enable log-scale normalization and per-axis scaling in `configs/settings_np_data.py`:
+
+```python
+DATA_NORMALIZE_LOG  = True        # log1p transform on Z before normalization
+DATA_NORMALIZE_AXIS = 'per_axis'  # normalize X, Y, Z axes independently
+DATA_NORMALIZE_VALUE = 2.0        # target scale (adjust to taste)
+```
+
+Then rebuild the cache:
+
+```bash
+python meshViewer.py -i <name> --no-cache
+```
+
 ### Audio Mode: Frame Seek
 
 Use `←` / `→` keys to seek forward/backward by `AUDIO_SEEK_STEP` frames (default: 30).
@@ -357,17 +423,6 @@ In `configs/settings.py`:
 ```python
 DEFAULT_SYSTEM_USAGE = 0.50  # default: 0.80; recommended 0.50–0.60 on low-end systems
 ```
-
----
-
-## Updates
-
-### Performance
-
-- **GS PLY sequence cache build speed improved ~2.4×** — VTK's C++ PLY reader is
-  bypassed in favor of a pure-Python parser (`plyfile`), eliminating a random worker
-  hang with large Gaussian Splat PLY files (62-property, ~47 MB per frame) and
-  reducing cache build time from ~4 min to ~1 min 35 sec (1,341-frame benchmark).
 
 ---
 

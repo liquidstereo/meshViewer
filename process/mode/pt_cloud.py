@@ -17,6 +17,14 @@ from configs.settings import (
     MESH_MATTE_COLOR,
     RENDER_MSAA_SAMPLES,
     SAVE_ALPHA,
+    NP_POINT_FOG_START,
+    NP_CLOUD_SIZE_DEFAULT,
+    NP_CLOUD_SHADER_SCALE,
+    NP_CLOUD_SHADER_SIZE_MIN,
+    NP_CLOUD_SHADER_SIZE_MAX,
+    NP_CLOUD_DEPTH_CONTRAST,
+    NP_CLOUD_DEPTH_COLOR,
+    NP_POINTS_COLOR,
 )
 from process.mode.surface import _pack_vertex_colors
 from process.mode.common import _set_mesh_input, _hex_to_rgb
@@ -34,7 +42,12 @@ def set_pc_render_quality(p, is_pc: bool) -> None:
         label = 'PC: MSAA -> 0' if is_pc else f'mesh: MSAA -> {target}'
         logger.debug('set_pc_render_quality: %s', label)
 
-def inject_pt_size_shader(actor, base_size: float) -> bool:
+def inject_pt_size_shader(
+    actor, base_size: float,
+    shader_scale: float = PT_CLOUD_SHADER_SCALE,
+    size_min: float = PT_CLOUD_SHADER_SIZE_MIN,
+    size_max: float = PT_CLOUD_SHADER_SIZE_MAX,
+) -> bool:
     vert_dec = (
         '//VTK::Camera::Dec\n'
         'uniform float u_ptCamDist;\n'
@@ -44,9 +57,9 @@ def inject_pt_size_shader(actor, base_size: float) -> bool:
 
     vert_impl = (
         '  float _dist = max(u_ptCamDist, 0.001);\n'
-        f'  float _scale = {PT_CLOUD_SHADER_SCALE:.4f};\n'
+        f'  float _scale = {shader_scale:.4f};\n'
         '  gl_PointSize = clamp((u_ptBaseSize * _scale * u_ptProjScale) / _dist,'
-        f' {PT_CLOUD_SHADER_SIZE_MIN:.2f}, {PT_CLOUD_SHADER_SIZE_MAX:.2f} * u_ptBaseSize);\n'
+        f' {size_min:.2f}, {size_max:.2f} * u_ptBaseSize);\n'
     )
     try:
         sp = actor.GetShaderProperty()
@@ -57,7 +70,14 @@ def inject_pt_size_shader(actor, base_size: float) -> bool:
         logger.warning('pt size shader injection failed: %s', e)
         return False
 
-def inject_pt_fog_shader(actor, base_size: float) -> bool:
+def inject_pt_fog_shader(
+    actor, base_size: float,
+    shader_scale: float = PT_CLOUD_SHADER_SCALE,
+    size_min: float = PT_CLOUD_SHADER_SIZE_MIN,
+    size_max: float = PT_CLOUD_SHADER_SIZE_MAX,
+    depth_contrast: float = PT_CLOUD_DEPTH_CONTRAST,
+    fog_start: float = POINT_FOG_START,
+) -> bool:
     vert_dec = (
         '//VTK::Camera::Dec\n'
         'uniform float u_ptCamDist;\n'
@@ -66,9 +86,9 @@ def inject_pt_fog_shader(actor, base_size: float) -> bool:
     )
     vert_impl = (
         '  float _dist = max(u_ptCamDist, 0.001);\n'
-        f'  float _scale = {PT_CLOUD_SHADER_SCALE:.4f};\n'
+        f'  float _scale = {shader_scale:.4f};\n'
         '  gl_PointSize = clamp((u_ptBaseSize * _scale * u_ptProjScale) / _dist,'
-        f' {PT_CLOUD_SHADER_SIZE_MIN:.2f}, {PT_CLOUD_SHADER_SIZE_MAX:.2f} * u_ptBaseSize);\n'
+        f' {size_min:.2f}, {size_max:.2f} * u_ptBaseSize);\n'
     )
     frag_code = (
         '//VTK::System::Dec\n'
@@ -87,10 +107,10 @@ def inject_pt_fog_shader(actor, base_size: float) -> bool:
         '  float _cpu_d = -_linear;\n'
         '  float _span = max(u_dmax - u_dmin, 0.001);\n'
         '  float _dn = clamp((_cpu_d - u_dmin) / _span, 0.0, 1.0);\n'
-        f'  float _dc = clamp(0.5 + (_dn - 0.5) * {PT_CLOUD_DEPTH_CONTRAST:.4f}, 0.0, 1.0);\n'
+        f'  float _dc = clamp(0.5 + (_dn - 0.5) * {depth_contrast:.4f}, 0.0, 1.0);\n'
         '  float _dist = 1.0 - _dc;\n'
-        f'  float _tail = max(1.0 - {POINT_FOG_START:.4f}, 0.00001);\n'
-        f'  float _fog_t = clamp((_dist - {POINT_FOG_START:.4f}) / _tail, 0.0, 1.0);\n'
+        f'  float _tail = max(1.0 - {fog_start:.4f}, 0.00001);\n'
+        f'  float _fog_t = clamp((_dist - {fog_start:.4f}) / _tail, 0.0, 1.0);\n'
         '  vec3 _base = vertexColorVSOutput.rgb;\n'
         '  fragOutput0 = vec4(\n'
         '    mix(_base, vec3(u_bg_r, u_bg_g, u_bg_b), _fog_t), 1.0);\n'
@@ -113,7 +133,12 @@ def update_pt_size_uniforms(p, actor) -> None:
         cam = p.camera
         pos = np.array(cam.position)
         focal = np.array(cam.focal_point)
-        base_size = float(getattr(p, '_pt_cloud_size', PT_CLOUD_SIZE_DEFAULT))
+        _sz_def = (
+            NP_CLOUD_SIZE_DEFAULT
+            if getattr(p, '_is_np_data', False)
+            else PT_CLOUD_SIZE_DEFAULT
+        )
+        base_size = float(getattr(p, '_pt_cloud_size', _sz_def))
 
         cam_dist = float(np.linalg.norm(pos - focal))
 
@@ -130,7 +155,10 @@ def update_pt_size_uniforms(p, actor) -> None:
         vu.SetUniformf('u_ptProjScale', proj_scale)
         vu.SetUniformf('u_ptBaseSize', base_size)
 
-        actor.GetMapper().Modified()
+        _key = (round(cam_dist, 3), round(proj_scale, 5), base_size)
+        if getattr(p, '_pt_size_unif_key', None) != _key:
+            p._pt_size_unif_key = _key
+            actor.GetMapper().Modified()
 
     except Exception as e:
         logger.debug('update_pt_size_uniforms failed: %s', e)
@@ -160,7 +188,12 @@ def _apply_pt_fog_gpu(p, mesh, mapper, actor, base_size: float, use_rgb: bool) -
     if getattr(p, '_pt_fog_color_key', None) != _color_key:
         raw = _pack_vertex_colors(mesh) if use_rgb else None
         if raw is None:
-            c = [int(v * 255) for v in _hex_to_rgb(POINTS_COLOR)]
+            _pc = (
+                NP_POINTS_COLOR
+                if getattr(p, '_is_np_data', False)
+                else POINTS_COLOR
+            )
+            c = [int(v * 255) for v in _hex_to_rgb(_pc)]
             raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
         cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
         p._pt_color_buf = raw
@@ -180,18 +213,24 @@ def _apply_pt_fog_gpu(p, mesh, mapper, actor, base_size: float, use_rgb: bool) -
     actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
     p._prev_mode = 'pt_fog'
 
-def build_pt_fog_lut(p, cmap_name: str) -> np.ndarray:
+def build_pt_fog_lut(
+    p, cmap_name: str, fog_start: float = POINT_FOG_START,
+) -> np.ndarray:
     bg = tuple(p.renderer.GetBackground())
-    key = (cmap_name, bg)
-    if getattr(p, '_pt_fog_lut_key', None) == key: return p._pt_fog_lut_cache
+    key = (cmap_name, bg, fog_start)
+    if getattr(p, '_pt_fog_lut_key', None) == key:
+        return p._pt_fog_lut_cache
     t_vals = np.linspace(0, 1, 256, dtype=np.float32)
     colors = _cm.get_cmap(cmap_name)(t_vals)[:, :3].astype(np.float32)
     bg_arr = np.array(bg, dtype=np.float32)
     depth_dist = 1.0 - t_vals
-    _tail = max(1.0 - POINT_FOG_START, 1e-6)
-    fog_t = np.clip((depth_dist - POINT_FOG_START) / _tail, 0.0, 1.0)[:, np.newaxis]
+    _tail = max(1.0 - fog_start, 1e-6)
+    fog_t = np.clip(
+        (depth_dist - fog_start) / _tail, 0.0, 1.0,
+    )[:, np.newaxis]
     lut = ((colors * (1.0 - fog_t) + bg_arr * fog_t) * 255).astype(np.uint8)
-    p._pt_fog_lut_cache = lut; p._pt_fog_lut_key = key
+    p._pt_fog_lut_cache = lut
+    p._pt_fog_lut_key = key
     return lut
 
 def pt_cam_key(p, mesh) -> tuple:
@@ -200,12 +239,24 @@ def pt_cam_key(p, mesh) -> tuple:
     return (id(mesh), round(d[0], 5), round(d[1], 5), round(d[2], 5), round(pos[0], 4), round(pos[1], 4), round(pos[2], 4), tuple(p.renderer.GetBackground()))
 
 def apply_pt_normal(p, mesh) -> None:
-    _base = getattr(p, '_pt_cloud_size', PT_CLOUD_SIZE_DEFAULT)
+    _is_np = getattr(p, '_is_np_data', False)
+    _sz_def = NP_CLOUD_SIZE_DEFAULT if _is_np else PT_CLOUD_SIZE_DEFAULT
+    _pts_color = NP_POINTS_COLOR if _is_np else POINTS_COLOR
+    _sh_scale = NP_CLOUD_SHADER_SCALE if _is_np else PT_CLOUD_SHADER_SCALE
+    _sh_smin = NP_CLOUD_SHADER_SIZE_MIN if _is_np else PT_CLOUD_SHADER_SIZE_MIN
+    _sh_smax = NP_CLOUD_SHADER_SIZE_MAX if _is_np else PT_CLOUD_SHADER_SIZE_MAX
+
+    _base = getattr(p, '_pt_cloud_size', _sz_def)
     use_rgb = getattr(p, '_pt_cloud_use_rgb', True)
     mapper = p._mesh_mapper; actor = p._mesh_actor
     _shader_size = getattr(p, '_pt_shader_size', -1)
     if _shader_size != _base and _shader_size != 0:
-        ok = inject_pt_size_shader(actor, _base)
+        ok = inject_pt_size_shader(
+            actor, _base,
+            shader_scale=_sh_scale,
+            size_min=_sh_smin,
+            size_max=_sh_smax,
+        )
         p._pt_shader_size = _base if ok else 0
     if _shader_size != 0: update_pt_size_uniforms(p, actor)
     _opacity = getattr(p, '_mesh_opacity', 1.0)
@@ -222,7 +273,7 @@ def apply_pt_normal(p, mesh) -> None:
     else:
         raw = _pack_vertex_colors(mesh) if use_rgb else None
         if raw is None:
-            c = [int(v * 255) for v in _hex_to_rgb(POINTS_COLOR)]
+            c = [int(v * 255) for v in _hex_to_rgb(_pts_color)]
             raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
     p._pt_color_buf = raw
     vtk_c = numpy_to_vtk(raw, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
@@ -240,10 +291,24 @@ def apply_pt_normal(p, mesh) -> None:
 
 def apply_pt_depth(p, mesh) -> None:
     from process.mode.depth import _compute_depth
-    _base = getattr(p, '_pt_cloud_size', PT_CLOUD_SIZE_DEFAULT)
+    _is_np = getattr(p, '_is_np_data', False)
+    _sz_def = NP_CLOUD_SIZE_DEFAULT if _is_np else PT_CLOUD_SIZE_DEFAULT
+    _depth_color = NP_CLOUD_DEPTH_COLOR if _is_np else PT_CLOUD_DEPTH_COLOR
+    _depth_contrast = NP_CLOUD_DEPTH_CONTRAST if _is_np else PT_CLOUD_DEPTH_CONTRAST
+    _fog_start = NP_POINT_FOG_START if _is_np else POINT_FOG_START
+    _sh_scale = NP_CLOUD_SHADER_SCALE if _is_np else PT_CLOUD_SHADER_SCALE
+    _sh_smin = NP_CLOUD_SHADER_SIZE_MIN if _is_np else PT_CLOUD_SHADER_SIZE_MIN
+    _sh_smax = NP_CLOUD_SHADER_SIZE_MAX if _is_np else PT_CLOUD_SHADER_SIZE_MAX
+
+    _base = getattr(p, '_pt_cloud_size', _sz_def)
     _shader_size = getattr(p, '_pt_shader_size', -1)
     if _shader_size != _base and _shader_size != 0:
-        ok = inject_pt_size_shader(p._mesh_actor, _base)
+        ok = inject_pt_size_shader(
+            p._mesh_actor, _base,
+            shader_scale=_sh_scale,
+            size_min=_sh_smin,
+            size_max=_sh_smax,
+        )
         p._pt_shader_size = _base if ok else 0
     if _shader_size != 0: update_pt_size_uniforms(p, p._mesh_actor)
     _opacity = getattr(p, '_mesh_opacity', 1.0)
@@ -253,12 +318,24 @@ def apply_pt_depth(p, mesh) -> None:
         p._mesh_actor.VisibilityOff() if _opacity <= 0.0 else p._mesh_actor.VisibilityOn()
         return
     p._pt_depth_cache_key = _key
-    mapper = p._mesh_mapper; actor = p._mesh_actor; lut = getattr(p, '_pt_depth_lut', None)
-    if lut is None: from process.mode.surface import apply_normal; apply_normal(p, mesh, None); return
-    saved_axis = getattr(p, '_depth_axis', 3); p._depth_axis = 3; depth = _compute_depth(p, mesh); p._depth_axis = saved_axis
+    mapper = p._mesh_mapper; actor = p._mesh_actor
+    lut = getattr(p, '_pt_depth_lut', None)
+    if lut is None:
+        from process.mode.surface import apply_normal
+        apply_normal(p, mesh, None); return
+    saved_axis = getattr(p, '_depth_axis', 3)
+    p._depth_axis = 3; depth = _compute_depth(p, mesh); p._depth_axis = saved_axis
     d_min, d_max = float(depth.min()), float(depth.max()); span = d_max - d_min
-    depth_n = np.clip(0.5 + ((depth - d_min) / span - 0.5) * PT_CLOUD_DEPTH_CONTRAST, 0.0, 1.0).astype(np.float32) if span > 1e-12 else np.zeros_like(depth, dtype=np.float32)
-    fog_lut = build_pt_fog_lut(p, PT_CLOUD_DEPTH_COLOR); idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8); blended = fog_lut[idx]
+    depth_n = (
+        np.clip(
+            0.5 + ((depth - d_min) / span - 0.5) * _depth_contrast,
+            0.0, 1.0,
+        ).astype(np.float32)
+        if span > 1e-12
+        else np.zeros_like(depth, dtype=np.float32)
+    )
+    fog_lut = build_pt_fog_lut(p, _depth_color, fog_start=_fog_start)
+    idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8); blended = fog_lut[idx]
     cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly'); p._pt_color_buf = blended
     vtk_c = numpy_to_vtk(blended, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
     vtk_c.SetName('PtDepthColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()
@@ -270,16 +347,47 @@ def apply_pt_depth(p, mesh) -> None:
 
 def apply_pt_fog(p, mesh) -> None:
     from process.mode.depth import _compute_depth
+    _is_np = getattr(p, '_is_np_data', False)
+    _sz_def = NP_CLOUD_SIZE_DEFAULT if _is_np else PT_CLOUD_SIZE_DEFAULT
+    _depth_color = NP_CLOUD_DEPTH_COLOR if _is_np else PT_CLOUD_DEPTH_COLOR
+    _depth_contrast = NP_CLOUD_DEPTH_CONTRAST if _is_np else PT_CLOUD_DEPTH_CONTRAST
+    _fog_start = NP_POINT_FOG_START if _is_np else POINT_FOG_START
+    _pts_color = NP_POINTS_COLOR if _is_np else POINTS_COLOR
+    _sh_scale = NP_CLOUD_SHADER_SCALE if _is_np else PT_CLOUD_SHADER_SCALE
+    _sh_smin = NP_CLOUD_SHADER_SIZE_MIN if _is_np else PT_CLOUD_SHADER_SIZE_MIN
+    _sh_smax = NP_CLOUD_SHADER_SIZE_MAX if _is_np else PT_CLOUD_SHADER_SIZE_MAX
+
     _opacity = getattr(p, '_mesh_opacity', 1.0)
-    _base = getattr(p, '_pt_cloud_size', PT_CLOUD_SIZE_DEFAULT); use_rgb = getattr(p, '_pt_cloud_use_rgb', False); use_depth_cmap = getattr(p, '_pt_cloud_depth', False); mapper = p._mesh_mapper; actor = p._mesh_actor
+    _base = getattr(p, '_pt_cloud_size', _sz_def)
+    use_rgb = getattr(p, '_pt_cloud_use_rgb', False)
+    use_depth_cmap = getattr(p, '_pt_cloud_depth', False)
+    mapper = p._mesh_mapper; actor = p._mesh_actor
     if not use_depth_cmap:
-        _fog_gpu = getattr(p, '_pt_fog_gpu', None); _fog_gpu_base = getattr(p, '_pt_fog_gpu_base', -1)
+        _fog_gpu = getattr(p, '_pt_fog_gpu', None)
+        _fog_gpu_base = getattr(p, '_pt_fog_gpu_base', -1)
         if _fog_gpu is None or _fog_gpu_base != _base:
-            ok = inject_pt_fog_shader(actor, _base); p._pt_fog_gpu = ok; p._pt_fog_gpu_base = _base; _fog_gpu = ok
-        if _fog_gpu: update_pt_size_uniforms(p, actor); _apply_pt_fog_gpu(p, mesh, mapper, actor, _base, use_rgb); return
+            ok = inject_pt_fog_shader(
+                actor, _base,
+                shader_scale=_sh_scale,
+                size_min=_sh_smin,
+                size_max=_sh_smax,
+                depth_contrast=_depth_contrast,
+                fog_start=_fog_start,
+            )
+            p._pt_fog_gpu = ok; p._pt_fog_gpu_base = _base; _fog_gpu = ok
+        if _fog_gpu:
+            update_pt_size_uniforms(p, actor)
+            _apply_pt_fog_gpu(p, mesh, mapper, actor, _base, use_rgb)
+            return
     _shader_size = getattr(p, '_pt_shader_size', -1)
     if _shader_size != _base and _shader_size != 0:
-        ok = inject_pt_size_shader(actor, _base); p._pt_shader_size = _base if ok else 0
+        ok = inject_pt_size_shader(
+            actor, _base,
+            shader_scale=_sh_scale,
+            size_min=_sh_smin,
+            size_max=_sh_smax,
+        )
+        p._pt_shader_size = _base if ok else 0
     if _shader_size != 0: update_pt_size_uniforms(p, actor)
     _key = (pt_cam_key(p, mesh), use_rgb, use_depth_cmap)
     if getattr(p, '_pt_fog_cache_key', None) == _key:
@@ -287,21 +395,37 @@ def apply_pt_fog(p, mesh) -> None:
         actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
         return
     p._pt_fog_cache_key = _key
-    saved_axis = getattr(p, '_depth_axis', 3); p._depth_axis = 3; depth = _compute_depth(p, mesh); p._depth_axis = saved_axis
+    saved_axis = getattr(p, '_depth_axis', 3)
+    p._depth_axis = 3; depth = _compute_depth(p, mesh); p._depth_axis = saved_axis
     span = float(depth.max() - depth.min())
-    depth_n = np.clip(0.5 + ((depth - depth.min()) / span - 0.5) * PT_CLOUD_DEPTH_CONTRAST, 0.0, 1.0) if span > 1e-12 else np.zeros(mesh.n_points, dtype=np.float32)
+    depth_n = (
+        np.clip(
+            0.5 + ((depth - depth.min()) / span - 0.5) * _depth_contrast,
+            0.0, 1.0,
+        )
+        if span > 1e-12
+        else np.zeros(mesh.n_points, dtype=np.float32)
+    )
     bg_arr = np.array(p.renderer.GetBackground(), dtype=np.float32)
     if use_depth_cmap:
-        fog_lut = build_pt_fog_lut(p, PT_CLOUD_DEPTH_COLOR); idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8); blended = fog_lut[idx]
+        fog_lut = build_pt_fog_lut(p, _depth_color, fog_start=_fog_start)
+        idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8)
+        blended = fog_lut[idx]
     else:
         base_u8 = _pack_vertex_colors(mesh) if use_rgb else None
         if base_u8 is not None:
             base = base_u8.astype(np.float32) / 255.0
         else:
-            c = np.array(_hex_to_rgb(POINTS_COLOR), dtype=np.float32)
+            c = np.array(_hex_to_rgb(_pts_color), dtype=np.float32)
             base = np.full((mesh.n_points, 3), c, dtype=np.float32)
-        depth_dist = 1.0 - depth_n; _tail = max(1.0 - POINT_FOG_START, 1e-6); t = np.clip((depth_dist - POINT_FOG_START) / _tail, 0.0, 1.0)[:, np.newaxis]
-        blended = ((base * (1.0 - t) + bg_arr * t).clip(0.0, 1.0) * 255).astype(np.uint8)
+        depth_dist = 1.0 - depth_n
+        _tail = max(1.0 - _fog_start, 1e-6)
+        t = np.clip(
+            (depth_dist - _fog_start) / _tail, 0.0, 1.0,
+        )[:, np.newaxis]
+        blended = (
+            (base * (1.0 - t) + bg_arr * t).clip(0.0, 1.0) * 255
+        ).astype(np.uint8)
     cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly'); p._pt_color_buf = blended
     vtk_c = numpy_to_vtk(blended, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
     vtk_c.SetName('PtFogColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()

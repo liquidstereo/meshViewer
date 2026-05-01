@@ -10,9 +10,7 @@ from configs.settings import (
     VTX_SPATIAL_INTERVAL,
     PT_CLOUD_SIZE_DEFAULT, POINT_FOG,
     STARTUP_MODE,
-    STARTUP_AXIS,
-    STARTUP_REVERSE_X_AXIS, STARTUP_REVERSE_Y_AXIS, STARTUP_REVERSE_Z_AXIS,
-    FLIP_OBJECT_X, FLIP_OBJECT_Y, FLIP_OBJECT_Z,
+    resolve_axis_settings,
 )
 
 _AXIS_SWAP_MAP = {'OFF': 0, 'YZ': 1, 'XZ': 2, 'XY': 3}
@@ -119,6 +117,7 @@ def init_plotter_state(plotter, args) -> None:
     plotter._error_msg = ''
     plotter._error_msg_time = 0.0
     plotter._preload_all = getattr(args, 'preload_all', True)
+    plotter._is_np_data = False
     plotter._pt_cloud_size = PT_CLOUD_SIZE_DEFAULT
     plotter._pt_cloud_use_rgb = True
     plotter._pt_cloud_depth = False
@@ -136,11 +135,18 @@ def init_plotter_state(plotter, args) -> None:
     plotter._depth_fog_gpu_fog = None
     plotter._depth_unif_key = None
     plotter._depth_scalar_key = None
-    plotter._axis_swap = _AXIS_SWAP_MAP.get(STARTUP_AXIS.upper(), 0)
+    plotter._pt_size_unif_key = None
+    _file_type = getattr(args, '_file_type', 'mesh')
+    (
+        _startup_axis,
+        _rev_x, _rev_y, _rev_z,
+        _flip_x, _flip_y, _flip_z,
+    ) = resolve_axis_settings(_file_type)
+    plotter._axis_swap = _AXIS_SWAP_MAP.get(_startup_axis.upper(), 0)
 
-    _rx = STARTUP_REVERSE_X_AXIS ^ FLIP_OBJECT_Y ^ FLIP_OBJECT_Z
-    _ry = STARTUP_REVERSE_Y_AXIS ^ FLIP_OBJECT_X ^ FLIP_OBJECT_Z
-    _rz = STARTUP_REVERSE_Z_AXIS ^ FLIP_OBJECT_X ^ FLIP_OBJECT_Y
+    _rx = _rev_x ^ _flip_y ^ _flip_z
+    _ry = _rev_y ^ _flip_x ^ _flip_z
+    _rz = _rev_z ^ _flip_x ^ _flip_y
     plotter._axis_reverse = (_rx, _ry, _rz)
     plotter._actor_cycle_idx = 0
     plotter._special_key_dispatch = {}

@@ -9,6 +9,9 @@ from configs.settings import (
     PT_CLOUD_SIZE_DEFAULT,
     PT_CLOUD_SIZE_POINT_WHITE,
     PT_CLOUD_SIZE_DEPTH,
+    NP_CLOUD_SIZE_DEFAULT,
+    NP_CLOUD_SIZE_POINT_WHITE,
+    NP_CLOUD_SIZE_DEPTH,
 )
 from process.mode.default import apply_default_reset
 from process.mode.labels import (
@@ -87,17 +90,23 @@ def register(p, trigger, set_mode):
     def _toggle_vtx():
 
         if getattr(p, '_n_faces', 1) == 0:
+            _is_np = getattr(p, '_is_np_data', False)
+            _sz_rgb = NP_CLOUD_SIZE_DEFAULT if _is_np else PT_CLOUD_SIZE_DEFAULT
+            _sz_white = (
+                NP_CLOUD_SIZE_POINT_WHITE if _is_np
+                else PT_CLOUD_SIZE_POINT_WHITE
+            )
             apply_default_reset(p)
             p._prev_mode = None
             p._pt_cloud_depth = False
             p._pt_cloud_use_rgb = not getattr(p, '_pt_cloud_use_rgb', False)
             if p._pt_cloud_use_rgb:
-                p._pt_cloud_size = PT_CLOUD_SIZE_DEFAULT
+                p._pt_cloud_size = _sz_rgb
                 label = LBL_PT_CLOUD_RGB
             elif getattr(p, '_pt_cloud_depth', False):
                 label = LBL_PT_CLOUD_DEPTH
             else:
-                p._pt_cloud_size = PT_CLOUD_SIZE_POINT_WHITE
+                p._pt_cloud_size = _sz_white
                 label = LBL_PT_CLOUD_WHITE
             set_mode(label)
             logger.info('Mode: %s', label)
@@ -134,10 +143,17 @@ def register(p, trigger, set_mode):
         if not was_on:
             p._is_depth = True
             if getattr(p, '_n_faces', 1) == 0:
-                p._pt_cloud_size = PT_CLOUD_SIZE_DEPTH
+                _is_np = getattr(p, '_is_np_data', False)
+                p._pt_cloud_size = (
+                    NP_CLOUD_SIZE_DEPTH if _is_np else PT_CLOUD_SIZE_DEPTH
+                )
         else:
             if getattr(p, '_n_faces', 1) == 0:
-                p._pt_cloud_size = PT_CLOUD_SIZE_DEFAULT
+                _is_np = getattr(p, '_is_np_data', False)
+                p._pt_cloud_size = (
+                    NP_CLOUD_SIZE_DEFAULT if _is_np
+                    else PT_CLOUD_SIZE_DEFAULT
+                )
         label = LBL_DEPTH if p._is_depth else ''
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')

@@ -2,6 +2,7 @@ from configs.settings import (
     ISO_COUNT_STEP, REDUCTION_MESH_STEP, EDGE_FEATURE_ANGLE_STEP,
     HDRI_ROT_STEP, VTX_SPATIAL_INTERVAL, VTX_SPATIAL_STEP,
     PT_CLOUD_SIZE_STEP, PT_CLOUD_SIZE_MIN, PT_CLOUD_SIZE_MAX,
+    NP_CLOUD_SIZE_STEP, NP_CLOUD_SIZE_MIN, NP_CLOUD_SIZE_MAX,
 )
 from configs.keybinding import (
     KEY_INC, KEY_DEC, KEY_AXIS_NEXT, KEY_AXIS_PREV,
@@ -53,9 +54,12 @@ def register(p, trigger, set_mode, apply_smooth_cycle):
             set_mode(FMT_VTX_INTERVAL.format(p._vtx_spatial_interval))
             trigger()
         elif getattr(p, '_n_faces', 1) == 0:
+            _is_np = getattr(p, '_is_np_data', False)
+            _sz_max = NP_CLOUD_SIZE_MAX if _is_np else PT_CLOUD_SIZE_MAX
+            _sz_step = NP_CLOUD_SIZE_STEP if _is_np else PT_CLOUD_SIZE_STEP
             p._pt_cloud_size = min(
-                PT_CLOUD_SIZE_MAX,
-                p._pt_cloud_size + PT_CLOUD_SIZE_STEP,
+                _sz_max,
+                p._pt_cloud_size + _sz_step,
             )
             actor = getattr(p, '_mesh_actor', None)
             if actor is not None:
@@ -93,9 +97,12 @@ def register(p, trigger, set_mode, apply_smooth_cycle):
             set_mode(FMT_VTX_INTERVAL.format(p._vtx_spatial_interval))
             trigger()
         elif getattr(p, '_n_faces', 1) == 0:
+            _is_np = getattr(p, '_is_np_data', False)
+            _sz_min = NP_CLOUD_SIZE_MIN if _is_np else PT_CLOUD_SIZE_MIN
+            _sz_step = NP_CLOUD_SIZE_STEP if _is_np else PT_CLOUD_SIZE_STEP
             p._pt_cloud_size = max(
-                PT_CLOUD_SIZE_MIN,
-                p._pt_cloud_size - PT_CLOUD_SIZE_STEP,
+                _sz_min,
+                p._pt_cloud_size - _sz_step,
             )
             actor = getattr(p, '_mesh_actor', None)
             if actor is not None:

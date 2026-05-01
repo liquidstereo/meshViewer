@@ -7,11 +7,15 @@ from vtk.util.numpy_support import numpy_to_vtk
 from configs.settings import (
     DEPTH_SHADING_FLAT, DEPTH_ENABLE_LIGHTING,
     MESH_DEPTH_COLOR, PT_CLOUD_DEPTH_COLOR,
-    POINT_FOG, POINT_FOG_START, PT_CLOUD_DEPTH_CONTRAST,
+    POINT_FOG_START, PT_CLOUD_DEPTH_CONTRAST,
     PT_CLOUD_SHADER_SCALE, PT_CLOUD_SHADER_SIZE_MIN, PT_CLOUD_SHADER_SIZE_MAX,
     PT_CLOUD_SIZE_DEFAULT,
+    NP_POINT_FOG_START, NP_CLOUD_DEPTH_CONTRAST,
+    NP_CLOUD_DEPTH_COLOR,
+    NP_CLOUD_SHADER_SCALE, NP_CLOUD_SHADER_SIZE_MIN, NP_CLOUD_SHADER_SIZE_MAX,
+    NP_CLOUD_SIZE_DEFAULT,
 )
-from process.mode.common import _hex_to_rgb, _set_mesh_input
+from process.mode.common import _hex_to_rgb, _set_mesh_input, _make_vtk_lut
 from process.mode.labels import AXIS_NAMES
 
 logger = logging.getLogger(__name__)
@@ -44,8 +48,17 @@ def _compute_bbox_depth_range(p, mesh) -> tuple:
     depths = -np.dot(world - cam_pos, cam_dir)
     return float(depths.min()), float(depths.max())
 
-def _build_depth_frag_code(fog: bool = True, is_pc: bool = False) -> str:
-    _color = PT_CLOUD_DEPTH_COLOR if is_pc else MESH_DEPTH_COLOR
+def _build_depth_frag_code(
+    fog: bool = True,
+    is_pc: bool = False,
+    depth_color: 'str | None' = None,
+    depth_contrast: float = PT_CLOUD_DEPTH_CONTRAST,
+    fog_start: float = POINT_FOG_START,
+) -> str:
+    _color = (
+        depth_color if depth_color is not None
+        else (PT_CLOUD_DEPTH_COLOR if is_pc else MESH_DEPTH_COLOR)
+    )
     if _color.startswith('#'):
         r, g, b = _hex_to_rgb(_color)
         lut_body = ', '.join(
@@ -74,11 +87,11 @@ def _build_depth_frag_code(fog: bool = True, is_pc: bool = False) -> str:
             'uniform float u_bg_b;\n'
         )
         fog_code = (
-            f'  float _dc = clamp(0.5 + (_dn - 0.5) * {PT_CLOUD_DEPTH_CONTRAST:.4f}, 0.0, 1.0);\n'
+            f'  float _dc = clamp(0.5 + (_dn - 0.5) * {depth_contrast:.4f}, 0.0, 1.0);\n'
             '  _color = _color * _dc;\n'
             '  float _dist = 1.0 - _dc;\n'
-            f'  float _tail = max(1.0 - {POINT_FOG_START:.4f}, 0.00001);\n'
-            f'  float _fog_t = clamp((_dist - {POINT_FOG_START:.4f}) / _tail, 0.0, 1.0);\n'
+            f'  float _tail = max(1.0 - {fog_start:.4f}, 0.00001);\n'
+            f'  float _fog_t = clamp((_dist - {fog_start:.4f}) / _tail, 0.0, 1.0);\n'
             '  _color = mix(_color, vec3(u_bg_r, u_bg_g, u_bg_b), _fog_t);\n'
         )
     else:
@@ -102,9 +115,23 @@ def _build_depth_frag_code(fog: bool = True, is_pc: bool = False) -> str:
     )
 
 def inject_depth_gpu_shader(
-    actor, is_pc: bool = False, base_size: float = 1.0, fog: bool = True,
+    actor,
+    is_pc: bool = False,
+    base_size: float = 1.0,
+    fog: bool = True,
+    depth_color: 'str | None' = None,
+    depth_contrast: float = PT_CLOUD_DEPTH_CONTRAST,
+    fog_start: float = POINT_FOG_START,
+    shader_scale: float = PT_CLOUD_SHADER_SCALE,
+    shader_size_min: float = PT_CLOUD_SHADER_SIZE_MIN,
+    shader_size_max: float = PT_CLOUD_SHADER_SIZE_MAX,
 ) -> bool:
-    code = _build_depth_frag_code(fog=fog, is_pc=is_pc)
+    code = _build_depth_frag_code(
+        fog=fog, is_pc=is_pc,
+        depth_color=depth_color,
+        depth_contrast=depth_contrast,
+        fog_start=fog_start,
+    )
     try:
         sp = actor.GetShaderProperty()
         try:
@@ -112,12 +139,8 @@ def inject_depth_gpu_shader(
         except AttributeError:
             pass
         if is_pc:
-            from configs.settings import (
-                PT_CLOUD_SHADER_SCALE, PT_CLOUD_SHADER_SIZE_MAX,
-                PT_CLOUD_SHADER_SIZE_MIN,
-            )
-            scale = PT_CLOUD_SHADER_SCALE * base_size
-            size_max = PT_CLOUD_SHADER_SIZE_MAX * base_size
+            scale = shader_scale * base_size
+            size_max = shader_size_max * base_size
 
             vert_dec = (
                 '//VTK::Camera::Dec\n'
@@ -127,7 +150,7 @@ def inject_depth_gpu_shader(
             vert_impl = (
                 '  float _ptDist = max(u_ptCamDist, 0.001);\n'
                 f'  gl_PointSize = clamp({scale:.4f} * u_ptProjScale / _ptDist,'
-                f' {PT_CLOUD_SHADER_SIZE_MIN:.2f}, {size_max:.2f});\n'
+                f' {shader_size_min:.2f}, {size_max:.2f});\n'
             )
             sp.AddVertexShaderReplacement(
                 '//VTK::Camera::Dec', False, vert_dec, False,
@@ -157,7 +180,8 @@ def _update_depth_uniforms(
 
 def _depth_cam_key(p, mesh) -> tuple:
     axis = getattr(p, '_depth_axis', 3)
-    bg = tuple(p.renderer.GetBackground()) if POINT_FOG else ()
+    _fog_flag = getattr(p, '_pt_fog_enabled', False)
+    bg = tuple(p.renderer.GetBackground()) if _fog_flag else ()
     if axis != 3:
         return (id(mesh), axis, bg)
     cam = p.renderer.GetActiveCamera()
@@ -171,11 +195,19 @@ def _depth_cam_key(p, mesh) -> tuple:
     )
 
 def _build_depth_fog_lut(p, is_pc: bool = False) -> np.ndarray:
+    _is_np = getattr(p, '_is_np_data', False)
     bg = tuple(p.renderer.GetBackground())
-    key = ('depth', bg, is_pc)
+    key = ('depth', bg, is_pc, _is_np)
     if getattr(p, '_depth_fog_lut_key', None) == key:
         return p._depth_fog_lut_cache
-    _color = PT_CLOUD_DEPTH_COLOR if is_pc else MESH_DEPTH_COLOR
+    if is_pc:
+        _color = NP_CLOUD_DEPTH_COLOR if _is_np else PT_CLOUD_DEPTH_COLOR
+        _contrast = NP_CLOUD_DEPTH_CONTRAST if _is_np else PT_CLOUD_DEPTH_CONTRAST
+        _fog_start = NP_POINT_FOG_START if _is_np else POINT_FOG_START
+    else:
+        _color = MESH_DEPTH_COLOR
+        _contrast = PT_CLOUD_DEPTH_CONTRAST
+        _fog_start = POINT_FOG_START
     t_vals = np.linspace(0, 1, 256, dtype=np.float32)
     if _color.startswith('#'):
         base_c = np.array(_hex_to_rgb(_color), dtype=np.float32)
@@ -183,11 +215,13 @@ def _build_depth_fog_lut(p, is_pc: bool = False) -> np.ndarray:
     else:
         colors = _cm.get_cmap(_color)(t_vals)[:, :3].astype(np.float32)
     bg_arr = np.array(bg, dtype=np.float32)
-    dc = np.clip(0.5 + (t_vals - 0.5) * PT_CLOUD_DEPTH_CONTRAST, 0.0, 1.0)
+    dc = np.clip(0.5 + (t_vals - 0.5) * _contrast, 0.0, 1.0)
     colors_mult = colors * dc[:, np.newaxis]
     depth_dist = 1.0 - dc
-    _tail = max(1.0 - POINT_FOG_START, 1e-6)
-    fog_t = np.clip((depth_dist - POINT_FOG_START) / _tail, 0.0, 1.0)[:, np.newaxis]
+    _tail = max(1.0 - _fog_start, 1e-6)
+    fog_t = np.clip(
+        (depth_dist - _fog_start) / _tail, 0.0, 1.0,
+    )[:, np.newaxis]
     lut = ((colors_mult * (1.0 - fog_t) + bg_arr * fog_t) * 255).astype(np.uint8)
     p._depth_fog_lut_cache = lut
     p._depth_fog_lut_key = key
@@ -209,22 +243,56 @@ def _compute_depth(p, mesh):
 def apply_depth(p, mesh):
     mapper = p._mesh_mapper
     actor = p._mesh_actor
-    lut = getattr(p, '_depth_lut', None)
     axis = getattr(p, '_depth_axis', 3)
     is_pc = (mesh.n_faces_strict == 0)
 
-    _fog_active = (is_pc and POINT_FOG and getattr(p, '_pt_fog_enabled', True))
+    _is_np = getattr(p, '_is_np_data', False)
+    _fog_active = is_pc and getattr(p, '_pt_fog_enabled', False)
 
     if axis == 3:
         from process.mode.pt_cloud import update_pt_size_uniforms
 
-        _base = getattr(p, '_pt_cloud_size', PT_CLOUD_SIZE_DEFAULT) if is_pc else None
+        _sz_def = NP_CLOUD_SIZE_DEFAULT if _is_np else PT_CLOUD_SIZE_DEFAULT
+        _base = (
+            getattr(p, '_pt_cloud_size', _sz_def) if is_pc else None
+        )
         _fog_gpu = getattr(p, '_depth_fog_gpu', None)
         _fog_gpu_base = getattr(p, '_depth_fog_gpu_base', -1)
         _fog_gpu_fog = getattr(p, '_depth_fog_gpu_fog', None)
 
-        if (_fog_gpu is None or (is_pc and _fog_gpu_base != _base) or _fog_gpu_fog != _fog_active):
-            ok = inject_depth_gpu_shader(actor, is_pc=is_pc, base_size=_base or 1.0, fog=_fog_active)
+        if (
+            _fog_gpu is None
+            or (is_pc and _fog_gpu_base != _base)
+            or _fog_gpu_fog != _fog_active
+        ):
+            ok = inject_depth_gpu_shader(
+                actor,
+                is_pc=is_pc,
+                base_size=_base or 1.0,
+                fog=_fog_active,
+                depth_color=(
+                    NP_CLOUD_DEPTH_COLOR if _is_np else PT_CLOUD_DEPTH_COLOR
+                ) if is_pc else None,
+                depth_contrast=(
+                    NP_CLOUD_DEPTH_CONTRAST if _is_np
+                    else PT_CLOUD_DEPTH_CONTRAST
+                ),
+                fog_start=(
+                    NP_POINT_FOG_START if _is_np else POINT_FOG_START
+                ),
+                shader_scale=(
+                    NP_CLOUD_SHADER_SCALE if _is_np
+                    else PT_CLOUD_SHADER_SCALE
+                ),
+                shader_size_min=(
+                    NP_CLOUD_SHADER_SIZE_MIN if _is_np
+                    else PT_CLOUD_SHADER_SIZE_MIN
+                ),
+                shader_size_max=(
+                    NP_CLOUD_SHADER_SIZE_MAX if _is_np
+                    else PT_CLOUD_SHADER_SIZE_MAX
+                ),
+            )
             p._depth_fog_gpu = ok
             p._depth_fog_gpu_base = _base
             p._depth_fog_gpu_fog = _fog_active
@@ -274,11 +342,41 @@ def apply_depth(p, mesh):
             if is_pc and _base is not None:
                 prop.SetPointSize(_base)
             actor.VisibilityOn()
-            p._cmap_lut = lut
+            p._cmap_lut = None
             p._cmap_range = (d_min, d_max)
             p._cmap_title = f'DEPTH.{AXIS_NAMES[axis]}'
             p._prev_mode = 'depth'
             return
+
+    if getattr(p, '_depth_fog_gpu', None):
+        try:
+            sp = actor.GetShaderProperty()
+            sp.ClearAllVertexShaderReplacements()
+            sp.SetFragmentShaderCode('')
+        except AttributeError:
+            pass
+        p._depth_fog_gpu = None
+        p._depth_unif_key = None
+        p._depth_scalar_key = None
+
+    _color = (
+        NP_CLOUD_DEPTH_COLOR if (_is_np and is_pc)
+        else (PT_CLOUD_DEPTH_COLOR if is_pc else MESH_DEPTH_COLOR)
+    )
+    _lut_key = ('depth_cpu', _color)
+    if getattr(p, '_depth_lut_cache_key', None) != _lut_key:
+        if _color.startswith('#'):
+            r, g, b = _hex_to_rgb(_color)
+            _lut_obj = _vtk.vtkLookupTable()
+            _lut_obj.SetNumberOfColors(256)
+            _lut_obj.Build()
+            for i in range(256):
+                _lut_obj.SetTableValue(i, r, g, b, 1.0)
+            p._depth_lut = _lut_obj
+        else:
+            p._depth_lut = _make_vtk_lut(_color)
+        p._depth_lut_cache_key = _lut_key
+    lut = p._depth_lut
 
     _key = _depth_cam_key(p, mesh)
     _needs_update = (getattr(p, '_depth_scalar_key', None) != _key)
@@ -310,9 +408,8 @@ def apply_depth(p, mesh):
             vtk_d.SetName('DepthScalars')
             cached.GetPointData().SetScalars(vtk_d)
             cached.GetPointData().Modified()
-            if lut is not None:
-                mapper.SetLookupTable(lut)
-                mapper.SetScalarRange(0.0, 1.0)
+            mapper.SetLookupTable(lut)
+            mapper.SetScalarRange(0.0, 1.0)
             mapper.ScalarVisibilityOn()
             mapper.SetColorModeToMapScalars()
     else:

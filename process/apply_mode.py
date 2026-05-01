@@ -11,7 +11,13 @@ from configs.settings import (
     PT_CLOUD_SIZE_DEFAULT,
     PT_CLOUD_SIZE_POINT_WHITE,
     PT_CLOUD_SIZE_DEPTH,
+    POINT_FOG,
     MESH_MATTE_COLOR,
+    NP_STARTUP_MODE_POINT_CLOUD,
+    NP_CLOUD_SIZE_DEFAULT,
+    NP_CLOUD_SIZE_POINT_WHITE,
+    NP_CLOUD_SIZE_DEPTH,
+    NP_POINT_FOG,
 )
 from process.mode.surface import apply_normal
 from process.mode.default import apply_default_reset
@@ -74,24 +80,40 @@ def apply_point_cloud_startup(p) -> None:
     p._pbr_with_tex = False
     p._is_tex = False
 
-    mode = STARTUP_MODE_POINT_CLOUD
+    _is_np = getattr(p, '_is_np_data', False)
+    if _is_np:
+        mode       = NP_STARTUP_MODE_POINT_CLOUD
+        _sz_rgb    = NP_CLOUD_SIZE_DEFAULT
+        _sz_white  = NP_CLOUD_SIZE_POINT_WHITE
+        _sz_depth  = NP_CLOUD_SIZE_DEPTH
+        p._pt_fog_enabled = NP_POINT_FOG
+    else:
+        mode       = STARTUP_MODE_POINT_CLOUD
+        _sz_rgb    = PT_CLOUD_SIZE_DEFAULT
+        _sz_white  = PT_CLOUD_SIZE_POINT_WHITE
+        _sz_depth  = PT_CLOUD_SIZE_DEPTH
+        p._pt_fog_enabled = POINT_FOG
+
     if mode == 'point_rgb':
         p._pt_cloud_use_rgb = True
         p._pt_cloud_depth = False
-        p._pt_cloud_size = PT_CLOUD_SIZE_DEFAULT
+        p._pt_cloud_size = _sz_rgb
     elif mode == 'point_white':
         p._pt_cloud_use_rgb = False
         p._pt_cloud_depth = False
-        p._pt_cloud_size = PT_CLOUD_SIZE_POINT_WHITE
+        p._pt_cloud_size = _sz_white
         p._pt_cloud_color = 'red'
     elif mode == 'depth':
         p._is_depth = True
-        p._pt_cloud_size = PT_CLOUD_SIZE_DEPTH
+        p._pt_cloud_size = _sz_depth
     else:
         p._pt_cloud_use_rgb = True
         p._pt_cloud_depth = False
-        p._pt_cloud_size = PT_CLOUD_SIZE_DEFAULT
-    logger.info('Point cloud startup mode: %s', mode)
+        p._pt_cloud_size = _sz_rgb
+    logger.info(
+        'Point cloud startup mode: %s%s',
+        mode, ' [NP]' if _is_np else '',
+    )
 
 _apply_point_cloud_startup = apply_point_cloud_startup
 

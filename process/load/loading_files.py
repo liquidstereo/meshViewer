@@ -5,12 +5,15 @@ import hashlib
 import logging
 import subprocess
 import threading
-import multiprocessing
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from process.load.memory_guard import (
     release_process_memory, evict_file_cache,
+)
+from process.load.load_mesh import read_polydata
+from process.load.load_pointcloud import (
+    is_gs_ply, build_gs_npz_cache, load_gs_frame, pack_pt_colors,
+    GS_CACHE_FILE,
 )
 
 import numpy as np
@@ -27,28 +30,27 @@ from configs.settings import (
     TEXTURE_DIR_ROOT,
     AUTO_DECIMATE_THRESHOLD, AUTO_DECIMATE_MAX_CELLS, AUTO_DECIMATE_MAX_RATIO,
     PT_SUBSAMPLE_THRESHOLD, PT_SUBSAMPLE_TARGET,
+    NP_SUBSAMPLE_THRESHOLD, NP_SUBSAMPLE_TARGET,
 )
-from configs.colorize import Msg
 from process.utils.extract_texture import extract_embedded_texture
 
 logger = logging.getLogger(__name__)
-
-_UV_CANDIDATE_NAMES = (
-    'TEXCOORD_0', 'TEXCOORD_1',
-    'TextureCoordinates', 'Texture Coordinates', 'UV',
-)
-
-_GLTF_EXTS = {'.glb', '.gltf'}
 
 _CACHE_WORKER_TIMEOUT = 60
 
 _EVICT_RELEASE_INTERVAL = 2.0
 
-_GS_CACHE_FILE = 'gs_cache.npz'
+_NPY_EXT = '.npy'
+_NPZ_INPUT_EXT = '.npz'
 
 def _dispatch_cache_build(obj_path: str, npz_dir: str) -> None:
-    if _is_gs_ply(obj_path):
-        _build_gs_npz(obj_path, npz_dir)
+    if is_gs_ply(obj_path):
+        frame_dir = _frame_cache_dir(obj_path, npz_dir)
+        build_gs_npz_cache(obj_path, frame_dir)
+    elif os.path.splitext(obj_path)[1].lower() in (
+        _NPY_EXT, _NPZ_INPUT_EXT
+    ):
+        _build_single_npz(obj_path, npz_dir)
     else:
         _build_one_subprocess(obj_path, npz_dir)
 
@@ -61,11 +63,10 @@ def _check_preload_feasible(
         return True
     frame_dir = _frame_cache_dir(obj_files[0], npz_dir)
     try:
-        gs_path = os.path.join(frame_dir, _GS_CACHE_FILE)
+        gs_path = os.path.join(frame_dir, GS_CACHE_FILE)
         if os.path.exists(gs_path):
             d = np.load(gs_path)
             n_pts = d['xyz'].shape[0]
-
             est_mb = n_pts * 15 / (1024 ** 2) * 2.5
         else:
             pts_path = os.path.join(frame_dir, 'points.npy')
@@ -116,209 +117,25 @@ def _build_one_subprocess(obj_path: str, npz_dir: str) -> None:
             f' {os.path.basename(obj_path)}'
         )
 
-def _frame_cache_dir(obj_path, npz_dir):
+def _frame_cache_dir(obj_path: str, npz_dir: str) -> str:
     name = os.path.basename(obj_path)
     base, ext = os.path.splitext(name)
     return os.path.join(npz_dir, f'{base}_{ext[1:]}')
 
 def _is_cache_stale(src_path: str, frame_dir: str) -> bool:
-    for fname in (_GS_CACHE_FILE, 'points.npy'):
+    for fname in (GS_CACHE_FILE, 'points.npy'):
         sentinel = os.path.join(frame_dir, fname)
         if os.path.exists(sentinel):
             return os.path.getmtime(src_path) > os.path.getmtime(sentinel)
     return True
 
-def _fix_gltf_v_flip(mesh: 'pv.PolyData') -> None:
-    tc = mesh.active_texture_coordinates
-    if tc is None:
-        return
-    fixed = tc.copy()
-    fixed[:, 1] = 1.0 - fixed[:, 1]
-    mesh.active_texture_coordinates = fixed
-    logger.info('glTF UV V coordinate restored (1 - V).')
-
-def _activate_texture_coords(mesh: 'pv.PolyData') -> None:
-    if mesh.active_texture_coordinates is not None:
-        logger.debug('UV already active: skipping activation.')
-        return
-
-    pd = mesh.GetPointData()
-    n_arrays = pd.GetNumberOfArrays()
-
-    for i in range(n_arrays):
-        name = pd.GetArrayName(i)
-        if not name:
-            continue
-
-        lower_name = name.lower()
-
-        if any(p in lower_name for p in ('uv', 'tex', 'coord')):
-            arr = pd.GetArray(name)
-            if arr and arr.GetNumberOfComponents() >= 2:
-                pd.SetActiveTCoords(name)
-                mesh.Modified()
-                logger.info(
-                    'Texture coordinates activated by pattern: "%s" (components=%d)',
-                    name, arr.GetNumberOfComponents()
-                )
-                return
-
-    logger.debug('No valid UV array found by pattern matching.')
-
-def _collect_polydata_blocks(mb: 'pv.MultiBlock') -> list:
-    blocks = []
-    for i in range(mb.n_blocks):
-        blk = mb[i]
-        if blk is None:
-            continue
-        if isinstance(blk, pv.PolyData) and blk.n_points > 0:
-            blocks.append(blk)
-        elif isinstance(blk, pv.MultiBlock):
-            blocks.extend(_collect_polydata_blocks(blk))
-    return blocks
-
-def _merge_gltf_blocks(blocks: list) -> 'pv.PolyData':
-    import vtk as _vtk
-    uv_blocks = [
-        b for b in blocks
-        if any(
-            b.GetPointData().GetArray(n) is not None
-            for n in _UV_CANDIDATE_NAMES
-        )
-    ]
-    target = uv_blocks if uv_blocks else blocks
-    if len(target) == 1:
-        return target[0]
-    append = _vtk.vtkAppendPolyData()
-    for b in target:
-        append.AddInputData(b)
-    append.Update()
-    return pv.wrap(append.GetOutput())
-
-def _read_as_polydata(path: str) -> 'pv.PolyData':
-    result = pv.read(path)
-    is_gltf = os.path.splitext(path)[1].lower() in _GLTF_EXTS
-    if not isinstance(result, pv.MultiBlock):
-        if not isinstance(result, pv.PolyData):
-            result = result.extract_surface()
-        _activate_texture_coords(result)
-        if is_gltf:
-            _fix_gltf_v_flip(result)
-        return result
-    blocks = _collect_polydata_blocks(result)
-    if blocks:
-        poly = _merge_gltf_blocks(blocks)
-    else:
-        combined = result.combine()
-        poly = (
-            combined if isinstance(combined, pv.PolyData)
-            else combined.extract_surface(
-                algorithm='dataset_surface'
-            )
-        )
-    _activate_texture_coords(poly)
-    if is_gltf:
-        _fix_gltf_v_flip(poly)
-    return poly
-
-def _is_gs_ply(obj_path: str) -> bool:
-    if os.path.splitext(obj_path)[1].lower() != '.ply':
-        return False
-    try:
-        with open(obj_path, 'rb') as f:
-            header = f.read(4096)
-        return b'f_dc_0' in header
-    except OSError:
-        return False
-
-def _build_gs_npz(obj_path: str, npz_dir: str) -> None:
-    from plyfile import PlyData
-    _log = logging.getLogger(__name__)
-    try:
+def _build_single_npz(obj_path: str, npz_dir: str) -> None:
+    if is_gs_ply(obj_path):
         frame_dir = _frame_cache_dir(obj_path, npz_dir)
-        os.makedirs(frame_dir, exist_ok=True)
-
-        ply = PlyData.read(obj_path)
-        v = ply['vertex'].data
-
-        xyz = np.column_stack(
-            [v['x'], v['y'], v['z']]
-        ).astype(np.float32)
-
-        fields = set(v.dtype.names)
-
-        features = np.column_stack(
-            [v['f_dc_0'], v['f_dc_1'], v['f_dc_2']]
-        ).astype(np.float32) if 'f_dc_0' in fields else np.empty(
-            (len(xyz), 0), dtype=np.float32
-        )
-
-        opacity = v['opacity'].astype(np.float32).reshape(-1)\
-            if 'opacity' in fields\
-            else np.empty(len(xyz), dtype=np.float32)
-
-        scale = np.column_stack(
-            [v['scale_0'], v['scale_1'], v['scale_2']]
-        ).astype(np.float32) if 'scale_0' in fields else np.empty(
-            (len(xyz), 0), dtype=np.float32
-        )
-
-        rotation = np.column_stack(
-            [v['rot_0'], v['rot_1'], v['rot_2'], v['rot_3']]
-        ).astype(np.float32) if 'rot_0' in fields else np.empty(
-            (len(xyz), 0), dtype=np.float32
-        )
-
-        sh_keys = sorted(
-            n for n in fields if n.startswith('f_rest_')
-        )
-        sh = np.stack(
-            [v[k] for k in sh_keys], axis=1
-        ).astype(np.float32) if sh_keys else np.empty(
-            (len(xyz), 0), dtype=np.float32
-        )
-
-        has_rgb = 'red' in fields and 'green' in fields and 'blue' in fields
-        color = np.column_stack(
-            [v['red'], v['green'], v['blue']]
-        ).astype(np.uint8) if has_rgb else np.empty(
-            (len(xyz), 0), dtype=np.uint8
-        )
-
-        cache_path = os.path.join(frame_dir, _GS_CACHE_FILE)
-        np.savez(
-            cache_path,
-            xyz=xyz,
-            features=features,
-            opacity=opacity,
-            scale=scale,
-            rotation=rotation,
-            sh=sh,
-            color=color,
-        )
-        evict_file_cache(cache_path)
-    except Exception as e:
-        _log.error('GS cache build failed [%s]: %s', obj_path, e)
-        raise
-
-def _load_gs_frame(frame_dir: str) -> 'pv.PolyData':
-    data = np.load(os.path.join(frame_dir, _GS_CACHE_FILE))
-    mesh = pv.PolyData(data['xyz'])
-    color = data['color']
-    if color.shape[1] >= 3:
-
-        mesh.point_data['_rgb_packed'] = np.ascontiguousarray(
-            color[:, :3], dtype=np.uint8
-        )
-    return mesh
-
-def _build_single_npz(obj_path, npz_dir):
-    if _is_gs_ply(obj_path):
-        _build_gs_npz(obj_path, npz_dir)
+        build_gs_npz_cache(obj_path, frame_dir)
         return
-    _log = logging.getLogger(__name__)
     try:
-        mesh = _read_as_polydata(obj_path)
+        mesh = read_polydata(obj_path)
         frame_dir = _frame_cache_dir(obj_path, npz_dir)
         os.makedirs(frame_dir, exist_ok=True)
         if mesh.faces.size > 0:
@@ -342,12 +159,12 @@ def _build_single_npz(obj_path, npz_dir):
         np.save(_p, mesh.points)
         evict_file_cache(_p)
     except Exception as e:
-        _log.error('Frame cache build failed [%s]: %s', obj_path, e)
+        logger.error('Frame cache build failed [%s]: %s', obj_path, e)
         raise
 
-def _load_mesh_frame(frame_dir: str) -> 'pv.PolyData':
-    if os.path.exists(os.path.join(frame_dir, _GS_CACHE_FILE)):
-        return _load_gs_frame(frame_dir)
+def _load_mesh_frame(frame_dir: str) -> pv.PolyData:
+    if os.path.exists(os.path.join(frame_dir, GS_CACHE_FILE)):
+        return load_gs_frame(frame_dir)
     pts = np.array(
         np.load(os.path.join(frame_dir, 'points.npy'), mmap_mode='r')
     )
@@ -370,27 +187,6 @@ def _load_mesh_frame(frame_dir: str) -> 'pv.PolyData':
             np.load(tc_path, mmap_mode='r')
         )
     return mesh
-
-def _pack_pt_colors(mesh) -> 'np.ndarray | None':
-    rgba = mesh.point_data.get('RGBA')
-    if rgba is not None and rgba.ndim == 2 and rgba.shape[1] >= 3:
-        return np.ascontiguousarray(rgba[:, :3], dtype=np.uint8)
-    rgb = mesh.point_data.get('RGB')
-    if rgb is not None and rgb.ndim == 2 and rgb.shape[1] >= 3:
-        return np.ascontiguousarray(rgb[:, :3], dtype=np.uint8)
-    c0 = mesh.point_data.get('COLOR_0')
-    if c0 is not None and c0.ndim == 2 and c0.shape[1] >= 3:
-        return np.ascontiguousarray(
-            (c0[:, :3] * 255).clip(0, 255), dtype=np.uint8
-        )
-    r = mesh.point_data.get('red')
-    g = mesh.point_data.get('green')
-    b = mesh.point_data.get('blue')
-    if r is not None and g is not None and b is not None:
-        return np.ascontiguousarray(
-            np.column_stack([r, g, b]), dtype=np.uint8
-        )
-    return None
 
 class FrameBuffer:
 
@@ -445,7 +241,6 @@ class FrameBuffer:
         npz_needed = not self._no_cache
 
         if _tex_path and npz_needed:
-
             logger.info('Starting parallel: texture load + NPZ build.')
             with ThreadPoolExecutor(max_workers=2) as exe:
                 tex_fut = exe.submit(self._load_tex_from_path, _tex_path)
@@ -699,7 +494,7 @@ class FrameBuffer:
             'Warm start: frame 0 loaded, prefetch started.'
         )
 
-    def _get_mesh(self, idx):
+    def _get_mesh(self, idx: int) -> pv.PolyData:
         with self._lock:
             if idx in self._mesh_cache:
                 return self._mesh_cache[idx]
@@ -712,7 +507,7 @@ class FrameBuffer:
             self._mesh_cache[idx] = mesh
         return mesh
 
-    def _ensure_npz_cache(self):
+    def _ensure_npz_cache(self) -> None:
         os.makedirs(self._npz_dir, exist_ok=True)
         missing = [
             f for f in self._obj_files
@@ -742,7 +537,7 @@ class FrameBuffer:
                 enrich_print=False, force_tty=True,
             ) as bar:
                 for i in range(0, total, chunk_size):
-                    chunk = missing[i : i + chunk_size]
+                    chunk = missing[i: i + chunk_size]
                     with ThreadPoolExecutor(max_workers=workers) as exe:
                         futures = {
                             exe.submit(
@@ -760,7 +555,6 @@ class FrameBuffer:
                                     futures[fut], e,
                                 )
                             bar()
-
                     release_process_memory(
                         f'{min(i + chunk_size, total)}/{total}'
                     )
@@ -779,15 +573,13 @@ class FrameBuffer:
 
         logger.info('Frame cache build completed.')
 
-    def _load_mesh(self, idx):
-
+    def _load_mesh(self, idx: int) -> pv.PolyData:
         obj_path = self._obj_files[idx]
         if self._no_cache:
-            mesh = _read_as_polydata(obj_path)
+            mesh = read_polydata(obj_path)
         else:
             frame_dir = _frame_cache_dir(obj_path, self._npz_dir)
             if not os.path.isdir(frame_dir):
-
                 _build_one_subprocess(obj_path, self._npz_dir)
             if os.path.isdir(frame_dir):
                 mesh = _load_mesh_frame(frame_dir)
@@ -797,7 +589,6 @@ class FrameBuffer:
                 )
         if mesh.n_faces_strict > AUTO_DECIMATE_THRESHOLD:
             if mesh.active_texture_coordinates is not None:
-
                 logger.debug(
                     'Auto decimation [idx=%d]: skipped'
                     ' (textured mesh, %d faces)',
@@ -818,9 +609,20 @@ class FrameBuffer:
                     idx, orig_faces, mesh.n_faces_strict, ratio,
                 )
         elif (mesh.n_faces_strict == 0
-                and mesh.n_points > PT_SUBSAMPLE_THRESHOLD):
+                and mesh.n_points > (
+                    NP_SUBSAMPLE_THRESHOLD
+                    if os.path.splitext(obj_path)[1].lower()
+                    in (_NPY_EXT, _NPZ_INPUT_EXT)
+                    else PT_SUBSAMPLE_THRESHOLD
+                )):
+            _ss_target = (
+                NP_SUBSAMPLE_TARGET
+                if os.path.splitext(obj_path)[1].lower()
+                in (_NPY_EXT, _NPZ_INPUT_EXT)
+                else PT_SUBSAMPLE_TARGET
+            )
             orig_pts = mesh.n_points
-            step = max(2, orig_pts // PT_SUBSAMPLE_TARGET)
+            step = max(2, orig_pts // _ss_target)
             indices = np.arange(0, orig_pts, step)
             sub = pv.PolyData(mesh.points[indices])
             for key in mesh.point_data.keys():
@@ -836,12 +638,12 @@ class FrameBuffer:
             mesh.compute_normals(inplace=True)
         if mesh.n_faces_strict == 0:
             if '_rgb_packed' not in mesh.point_data:
-                _rgb = _pack_pt_colors(mesh)
+                _rgb = pack_pt_colors(mesh)
                 if _rgb is not None:
                     mesh.point_data['_rgb_packed'] = _rgb
         return mesh
 
-    def _load_texture(self, idx):
+    def _load_texture(self, idx: int) -> 'pv.Texture | None':
         base = os.path.splitext(
             os.path.basename(self._obj_files[idx])
         )[0]
@@ -851,7 +653,7 @@ class FrameBuffer:
                 return pv.read_texture(t_path)
         return self._shared_tex
 
-    def _prefetch(self, center_idx):
+    def _prefetch(self, center_idx: int) -> None:
         fwd = self._preload_ahead
         bwd = max(1, int(fwd * PRELOAD_BACK_RATIO))
         start = max(0, center_idx - bwd)
@@ -861,14 +663,18 @@ class FrameBuffer:
             self._submit_mesh_prefetch(i)
             self._submit_tex_prefetch(i)
 
-    def _submit_prefetch(self, idx, cache, pending, executor, worker):
+    def _submit_prefetch(
+        self, idx: int, cache: dict, pending: set, executor, worker,
+    ) -> None:
         with self._lock:
             if idx in cache or idx in pending:
                 return
             pending.add(idx)
         executor.submit(worker, idx)
 
-    def _run_prefetch(self, idx, load_fn, cache, pending, label):
+    def _run_prefetch(
+        self, idx: int, load_fn, cache: dict, pending: set, label: str,
+    ) -> None:
         try:
             item = load_fn(idx)
             with self._lock:
@@ -881,31 +687,31 @@ class FrameBuffer:
             with self._lock:
                 pending.discard(idx)
 
-    def _submit_mesh_prefetch(self, idx):
+    def _submit_mesh_prefetch(self, idx: int) -> None:
         self._submit_prefetch(
             idx, self._mesh_cache, self._pending_mesh,
             self._mesh_executor, self._prefetch_mesh,
         )
 
-    def _submit_tex_prefetch(self, idx):
+    def _submit_tex_prefetch(self, idx: int) -> None:
         self._submit_prefetch(
             idx, self._tex_cache, self._pending_tex,
             self._tex_executor, self._prefetch_tex,
         )
 
-    def _prefetch_mesh(self, idx):
+    def _prefetch_mesh(self, idx: int) -> None:
         self._run_prefetch(
             idx, self._load_mesh,
             self._mesh_cache, self._pending_mesh, 'Mesh',
         )
 
-    def _prefetch_tex(self, idx):
+    def _prefetch_tex(self, idx: int) -> None:
         self._run_prefetch(
             idx, self._load_texture,
             self._tex_cache, self._pending_tex, 'Texture',
         )
 
-    def _evict(self, center_idx):
+    def _evict(self, center_idx: int) -> None:
         if self._preload_all:
             return
         half = self._window_size // 2
@@ -921,13 +727,8 @@ class FrameBuffer:
 
         evicted = 0
         with self._lock:
-            for cache in (
-                self._mesh_cache, self._tex_cache
-            ):
-                evict_keys = [
-                    k for k in cache
-                    if k < lo or k > hi
-                ]
+            for cache in (self._mesh_cache, self._tex_cache):
+                evict_keys = [k for k in cache if k < lo or k > hi]
                 for k in evict_keys:
                     del cache[k]
                 evicted += len(evict_keys)
@@ -937,25 +738,3 @@ class FrameBuffer:
             if now - self._last_evict_release >= _EVICT_RELEASE_INTERVAL:
                 self._last_evict_release = now
                 release_process_memory('evict')
-
-def load_audio_data(
-    audio_path: str,
-    start: float,
-    end: float | None,
-    fps: int,
-) -> tuple:
-    from process.audio.pipeline import (
-        prepare_audio_data, PREPARE_AUDIO_STEPS,
-    )
-    base_name = os.path.splitext(os.path.basename(audio_path))[0]
-    with alive_bar(
-                PREPARE_AUDIO_STEPS, spinner=None,
-                title='PROCESSING AUDIO DATA...',
-                title_length=25, length=15,
-                dual_line=True, stats=True,
-                elapsed=True, manual=False,
-                enrich_print=False, force_tty=True
-            ) as bar:
-        result = prepare_audio_data(audio_path, start, end, fps, bar=bar)
-        bar.title = 'AUDIO PROCESSING COMPLETE'
-    return result

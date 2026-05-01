@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import pyvista as pv
+import vtk
 
 from configs.settings import (
     COLOR_BG, WIDTH_ISO_LINE, TYPE_TUBE, ISO_NORMAL_OFFSET,
@@ -25,8 +26,8 @@ def _get_iso_display(p, mesh):
 
     from configs.settings import REDUCTION_MESH
     display = mesh.copy(deep=True)
-    if REDUCTION_MESH > 0:
-        display = display.decimate(REDUCTION_MESH)
+    if REDUCTION_MESH < 1.0:
+        display = display.decimate(1.0 - REDUCTION_MESH)
 
     p._cached_iso_mesh = mesh
     p._cached_iso_display = display
@@ -82,9 +83,16 @@ def apply_isoline(p, mesh):
     if ISO_NORMAL_OFFSET != 0 and contours.n_points > 0:
         if 'Normals' not in display.point_data:
             display.compute_normals(inplace=True)
-
-        contours = contours.probe(display)
-        contours.points += contours.point_data['Normals'] * ISO_NORMAL_OFFSET
+        _probe = vtk.vtkProbeFilter()
+        _probe.SetSourceData(display)
+        _probe.SetInputData(contours)
+        _probe.Update()
+        _probed = pv.wrap(_probe.GetOutput())
+        if 'Normals' in _probed.point_data:
+            contours = _probed
+            contours.points += (
+                contours.point_data['Normals'] * ISO_NORMAL_OFFSET
+            )
 
     p._iso_mapper.SetInputData(contours)
     p._iso_mapper.SetLookupTable(p._iso_lut)

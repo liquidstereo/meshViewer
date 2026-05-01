@@ -70,6 +70,7 @@ def apply_default_reset(p) -> None:
     p._depth_fog_gpu_fog = None
     p._depth_unif_key = None
     p._depth_scalar_key = None
+    p._pt_size_unif_key = None
 
     disable_hdri(p)
 

@@ -81,3 +81,11 @@ VTX_POINT_SIZE          = 6
 VTX_POINT_COLOR         = _apply_theme('#FF0000')
 VTX_PICK_SIZE           = 14
 VTX_PICK_COLOR          = _apply_theme('#FFFF00')
+
+MESH_STARTUP_AXIS           = 'OFF'
+MESH_STARTUP_REVERSE_X_AXIS = None
+MESH_STARTUP_REVERSE_Y_AXIS = None
+MESH_STARTUP_REVERSE_Z_AXIS = None
+MESH_FLIP_OBJECT_X          = None
+MESH_FLIP_OBJECT_Y          = None
+MESH_FLIP_OBJECT_Z          = None

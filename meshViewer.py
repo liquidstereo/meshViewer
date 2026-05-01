@@ -16,7 +16,7 @@ from configs.logging_cfg import setup_logging
 from configs.colorize import Msg
 from process.viewer import (
     init_vtk, load_files, create_plotter,
-    apply_input_format,
+    detect_file_type, apply_input_format,
     setup_cam, build_scene, register_keys,
     setup_window, show_window, load_seq_overlay,
     apply_hide_info, run_loop,
@@ -93,6 +93,7 @@ def exec_meshViewer(obj_files, args):
     buffer = load_files(obj_files, args)
     show_loading()
     plotter = create_plotter()
+    args._file_type = detect_file_type(obj_files[0])
     init_plotter_state(plotter, args)
     apply_input_format(plotter, obj_files[0])
     setup_cam(plotter, buffer)
@@ -198,7 +199,7 @@ def main():
 
     setup_logging(args.input, level=DEBUG if args.verbose else INFO)
     if args.save:
-        _geo = detect_geometry_type(files[0]) if files else 'mesh'
+        _geo = detect_file_type(files[0]) if files else 'mesh'
         write_settings_log(
             args.save, geo_type=_geo,
             input_path=getattr(args, 'input_path', ''),

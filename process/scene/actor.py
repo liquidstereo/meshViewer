@@ -17,6 +17,7 @@ from configs.settings import (
     FNORMAL_TIP_LENGTH, FNORMAL_TIP_RADIUS,
     FNORMAL_TIP_RESOLUTION, FNORMAL_SHAFT_RADIUS,
     FNORMAL_SHAFT_RESOLUTION, FNORMAL_SCALE, FNORMAL_CMAP,
+    NP_CLOUD_DEPTH_COLOR,
 )
 from process.mode.common import _hex_to_rgb, _make_vtk_lut
 
@@ -54,7 +55,12 @@ def _init_mesh_iso_wire_actors(plotter) -> None:
         None if MESH_DEPTH_COLOR.startswith('#')
         else _make_vtk_lut(MESH_DEPTH_COLOR)
     )
-    plotter._pt_depth_lut = _make_vtk_lut(PT_CLOUD_DEPTH_COLOR)
+    _pt_d_color = (
+        NP_CLOUD_DEPTH_COLOR
+        if getattr(plotter, '_is_np_data', False)
+        else PT_CLOUD_DEPTH_COLOR
+    )
+    plotter._pt_depth_lut = _make_vtk_lut(_pt_d_color)
     iso_actor.VisibilityOff()
     plotter.renderer.AddActor(iso_actor)
     plotter._iso_mapper = iso_mapper
