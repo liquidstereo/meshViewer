@@ -13,7 +13,7 @@ An interactive 3D mesh viewer built on OpenGL with support for static meshes, fr
   `(N, 3)` → XYZ point cloud, `(N, 6)` → XYZ+RGB point cloud, `(H, W)` → depth map
   rendered as a point cloud or surface mesh (toggle via `NPY_AS_POINTCLOUD` in
   `configs/settings_np_data.py`; default: point cloud).
-  Cache is built on first load; run with `--no-cache` once after switching modes.
+  No cache is built — files are read directly on every load.
 
 - **NPZ/NPY depth map normalization** — Four constants in
   `configs/settings_np_data.py` control depth distribution for sequences with
