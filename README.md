@@ -1,6 +1,6 @@
 # MeshViewer
 
-A PyVista/VTK-based interactive 3D mesh viewer built on OpenGL, supporting static meshes, frame sequences, point clouds, and real-time audio visualization.
+An interactive 3D mesh viewer built on OpenGL with support for static meshes, frame sequences, point clouds, and real-time audio visualization.
 
 ---
 
