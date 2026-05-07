@@ -5,7 +5,10 @@ import hashlib
 import logging
 import subprocess
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor, as_completed,
+    TimeoutError as _FutureTimeoutError,
+)
 
 from process.load.memory_guard import (
     release_process_memory, evict_file_cache,
@@ -42,6 +45,10 @@ _EVICT_RELEASE_INTERVAL = 2.0
 
 _NPY_EXT = '.npy'
 _NPZ_INPUT_EXT = '.npz'
+
+_NPY_LIKE = frozenset((_NPY_EXT, _NPZ_INPUT_EXT))
+
+_PRELOAD_TIMEOUT = 120
 
 def _dispatch_cache_build(obj_path: str, npz_dir: str) -> None:
     if is_gs_ply(obj_path):
@@ -208,7 +215,13 @@ class FrameBuffer:
         self._mesh_cache = {}
         self._tex_cache = {}
         self._lock = threading.Lock()
-        _eff_workers = WORKER_COUNT if len(obj_files) >= 4 else 1
+        self._is_all_npy = all(
+            os.path.splitext(f)[1].lower() in _NPY_LIKE
+            for f in obj_files
+        )
+        _eff_workers = 1 if self._is_all_npy else (
+            WORKER_COUNT if len(obj_files) >= 4 else 1
+        )
         self._mesh_executor = ThreadPoolExecutor(
             max_workers=_eff_workers
         )
@@ -312,7 +325,11 @@ class FrameBuffer:
 
     def _preload_all_meshes(self) -> None:
         total = self.total
-        logger.info('Preloading all %d meshes...', total)
+        _use_main = total == 1 or self._is_all_npy
+        logger.info(
+            'Preloading %d meshes (mode=%s)...',
+            total, 'main-thread' if _use_main else 'executor',
+        )
         t0 = time.perf_counter()
         try:
             with alive_bar(
@@ -323,11 +340,20 @@ class FrameBuffer:
                 manual=False, enrich_print=True,
                 force_tty=True
             ) as bar:
-                if total == 1:
-                    mesh = self._load_mesh(0)
-                    with self._lock:
-                        self._mesh_cache[0] = mesh
-                    bar()
+                if _use_main:
+                    for i in range(total):
+                        _fname = os.path.basename(self._obj_files[i])
+                        try:
+                            mesh = self._load_mesh(i)
+                        except Exception as e:
+                            logger.error(
+                                'Preload failed [idx=%d] %s: %s',
+                                i, _fname, e,
+                            )
+                            mesh = pv.PolyData()
+                        with self._lock:
+                            self._mesh_cache[i] = mesh
+                        bar()
                 else:
                     futs = {
                         self._mesh_executor.submit(
@@ -337,11 +363,25 @@ class FrameBuffer:
                     }
                     for fut in as_completed(futs):
                         idx = futs[fut]
+                        _fname = os.path.basename(
+                            self._obj_files[idx]
+                        )
                         try:
-                            mesh = fut.result()
+                            mesh = fut.result(
+                                timeout=_PRELOAD_TIMEOUT
+                            )
+                        except _FutureTimeoutError:
+                            logger.error(
+                                'Preload TIMEOUT [idx=%d] %s'
+                                ' (>%ds): frame skipped.',
+                                idx, _fname, _PRELOAD_TIMEOUT,
+                            )
+                            fut.cancel()
+                            mesh = pv.PolyData()
                         except Exception as e:
                             logger.error(
-                                'Preload failed [idx=%d]: %s', idx, e
+                                'Preload failed [idx=%d] %s: %s',
+                                idx, _fname, e,
                             )
                             mesh = pv.PolyData()
                         with self._lock:
@@ -511,7 +551,8 @@ class FrameBuffer:
         os.makedirs(self._npz_dir, exist_ok=True)
         missing = [
             f for f in self._obj_files
-            if _is_cache_stale(
+            if os.path.splitext(f)[1].lower() not in _NPY_LIKE
+            and _is_cache_stale(
                 f, _frame_cache_dir(f, self._npz_dir)
             )
         ]
@@ -575,8 +616,17 @@ class FrameBuffer:
 
     def _load_mesh(self, idx: int) -> pv.PolyData:
         obj_path = self._obj_files[idx]
-        if self._no_cache:
+        _ext = os.path.splitext(obj_path)[1].lower()
+        if self._no_cache or _ext in _NPY_LIKE:
+            logger.debug(
+                '_load_mesh NPY [idx=%d] enter: %s',
+                idx, os.path.basename(obj_path),
+            )
             mesh = read_polydata(obj_path)
+            logger.debug(
+                '_load_mesh NPY [idx=%d] read done: %d pts',
+                idx, mesh.n_points,
+            )
         else:
             frame_dir = _frame_cache_dir(obj_path, self._npz_dir)
             if not os.path.isdir(frame_dir):

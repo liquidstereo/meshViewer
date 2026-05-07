@@ -341,7 +341,7 @@ def apply_pt_depth(p, mesh) -> None:
     vtk_c.SetName('PtDepthColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars(); p._cmap_lut = lut; p._cmap_range = (0.0, 1.0); p._cmap_title = f'DEPTH.{AXIS_NAMES[3]}'
     actor.SetTexture(None); prop = actor.GetProperty()
-    prop.SetOpacity(_opacity); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(getattr(p, '_pt_cloud_size', 1)); prop.SetInterpolationToFlat()
+    prop.SetOpacity(_opacity); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(_base); prop.SetInterpolationToFlat()
     actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
     p._prev_mode = 'pt_depth'
 
@@ -431,6 +431,6 @@ def apply_pt_fog(p, mesh) -> None:
     vtk_c.SetName('PtFogColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars()
     actor.SetTexture(None); prop = actor.GetProperty()
-    prop.SetOpacity(_opacity); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(getattr(p, '_pt_cloud_size', 1)); prop.SetInterpolationToFlat()
+    prop.SetOpacity(_opacity); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(_base); prop.SetInterpolationToFlat()
     actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
     p._prev_mode = 'pt_fog'

@@ -25,6 +25,7 @@ from process.mode.labels import (
     LBL_PT_FOG_ON, LBL_PT_FOG_OFF,
 )
 from process.scene.lighting import apply_lighting
+from process.plotter.state import restore_startup_mode
 from process.keys import bind_key
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,9 @@ def register(p, trigger, set_mode):
         if not was_on:
             p._is_isoline = True
             p._is_backface = False
-        label = LBL_ISOLINE if p._is_isoline else ''
+            label = LBL_ISOLINE
+        else:
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
@@ -47,10 +50,11 @@ def register(p, trigger, set_mode):
         if not was_on:
             p._is_wire = True
             p._wire_mesh_hidden = True
+            label = LBL_WIREFRAME
         else:
             if hasattr(p, '_mesh_actor'):
                 p._mesh_actor.VisibilityOn()
-        label = LBL_WIREFRAME if p._is_wire else ''
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
@@ -62,7 +66,9 @@ def register(p, trigger, set_mode):
             p._is_lighting = True
             apply_lighting(p)
             p._reduction_mesh = 0.1
-        label = LBL_REDUCTION if p._is_lighting else ''
+            label = LBL_REDUCTION
+        else:
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
@@ -72,7 +78,9 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_normal_color = True
-        label = LBL_SURF_NORMAL if p._is_normal_color else ''
+            label = LBL_SURF_NORMAL
+        else:
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
@@ -82,7 +90,9 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_mesh_quality = True
-        label = LBL_QUALITY if p._is_mesh_quality else ''
+            label = LBL_QUALITY
+        else:
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
@@ -118,7 +128,9 @@ def register(p, trigger, set_mode):
         if not was_on:
             p._is_vtx = True
             p._vtx_mesh_hidden = False
-        label = LBL_VERTICES if p._is_vtx else ''
+            label = LBL_VERTICES
+        else:
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
@@ -129,10 +141,11 @@ def register(p, trigger, set_mode):
         if not was_on:
             p._is_fnormal = True
             p._fnormal_mesh_hidden = False
+            label = LBL_FACE_NORMAL
         else:
             if hasattr(p, '_mesh_actor'):
                 p._mesh_actor.VisibilityOn()
-        label = LBL_FACE_NORMAL if p._is_fnormal else ''
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
@@ -147,6 +160,7 @@ def register(p, trigger, set_mode):
                 p._pt_cloud_size = (
                     NP_CLOUD_SIZE_DEPTH if _is_np else PT_CLOUD_SIZE_DEPTH
                 )
+            label = LBL_DEPTH
         else:
             if getattr(p, '_n_faces', 1) == 0:
                 _is_np = getattr(p, '_is_np_data', False)
@@ -154,7 +168,7 @@ def register(p, trigger, set_mode):
                     NP_CLOUD_SIZE_DEFAULT if _is_np
                     else PT_CLOUD_SIZE_DEFAULT
                 )
-        label = LBL_DEPTH if p._is_depth else ''
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
@@ -165,10 +179,11 @@ def register(p, trigger, set_mode):
         if not was_on:
             p._is_edge = True
             p._edge_mesh_hidden = False
+            label = LBL_EDGE
         else:
             if hasattr(p, '_mesh_actor'):
                 p._mesh_actor.VisibilityOn()
-        label = LBL_EDGE if p._is_edge else ''
+            label = restore_startup_mode(p)
         set_mode(label)
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()

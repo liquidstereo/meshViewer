@@ -43,6 +43,7 @@ def apply_default_reset(p) -> None:
         prop = p._mesh_actor.GetProperty()
         prop.SetTexture('albedoTex', None)
         prop.SetInterpolationToFlat()
+        prop.SetLighting(True)
         prop.SetSpecular(0.0)
         prop.SetMetallic(0.0)
         prop.SetRoughness(0.5)

@@ -8,9 +8,16 @@ from configs.settings import (
     EDGE_FEATURE_ANGLE,
     ISO_COUNT_DEFAULT, REDUCTION_MESH,
     VTX_SPATIAL_INTERVAL,
-    PT_CLOUD_SIZE_DEFAULT, POINT_FOG,
-    STARTUP_MODE,
+    PT_CLOUD_SIZE_DEFAULT, PT_CLOUD_SIZE_POINT_WHITE, PT_CLOUD_SIZE_DEPTH,
+    STARTUP_MODE, STARTUP_MODE_POINT_CLOUD,
+    POINT_FOG,
+    NP_STARTUP_MODE_POINT_CLOUD,
+    NP_CLOUD_SIZE_DEFAULT, NP_CLOUD_SIZE_POINT_WHITE, NP_CLOUD_SIZE_DEPTH,
     resolve_axis_settings,
+)
+from process.mode.labels import (
+    SMOOTH_CYCLE_LABELS,
+    LBL_PT_CLOUD_RGB, LBL_PT_CLOUD_WHITE, LBL_PT_CLOUD_DEPTH,
 )
 
 _AXIS_SWAP_MAP = {'OFF': 0, 'YZ': 1, 'XZ': 2, 'XY': 3}
@@ -28,10 +35,53 @@ _STARTUP_FLAG_MAP = {
 }
 
 _SMOOTH_STARTUP_MAP = {
-    'pbr_tex':     0,
-    'pbr_tex.tex': 1,
-    'pbr_tex.pbr': 2,
+    'pbr_tex.tex': 0,
+    'pbr_tex.pbr': 1,
+    'pbr_tex':     2,
 }
+
+def restore_startup_mode(p) -> str:
+    if getattr(p, '_n_faces', 1) == 0:
+        _is_np = getattr(p, '_is_np_data', False)
+        mode = NP_STARTUP_MODE_POINT_CLOUD if _is_np else STARTUP_MODE_POINT_CLOUD
+        if _is_np:
+            _sz_rgb, _sz_white, _sz_depth = (
+                NP_CLOUD_SIZE_DEFAULT, NP_CLOUD_SIZE_POINT_WHITE, NP_CLOUD_SIZE_DEPTH
+            )
+        else:
+            _sz_rgb, _sz_white, _sz_depth = (
+                PT_CLOUD_SIZE_DEFAULT, PT_CLOUD_SIZE_POINT_WHITE, PT_CLOUD_SIZE_DEPTH
+            )
+        if mode == 'point_rgb':
+            p._pt_cloud_use_rgb = True
+            p._pt_cloud_depth = False
+            p._pt_cloud_size = _sz_rgb
+            return LBL_PT_CLOUD_RGB
+        elif mode == 'point_white':
+            p._pt_cloud_use_rgb = False
+            p._pt_cloud_depth = False
+            p._pt_cloud_size = _sz_white
+            return LBL_PT_CLOUD_WHITE
+        elif mode == 'depth':
+            p._is_depth = True
+            p._pt_cloud_depth = True
+            p._pt_cloud_size = _sz_depth
+            return LBL_PT_CLOUD_DEPTH
+        return ''
+    idx = _SMOOTH_STARTUP_MAP.get(STARTUP_MODE)
+    if idx is not None:
+        fn = getattr(p, '_apply_smooth_cycle', None)
+        if fn:
+            p._is_smooth = True
+            p._smooth_cycle = idx
+            fn(idx)
+            return SMOOTH_CYCLE_LABELS[idx]
+    else:
+        flag = _STARTUP_FLAG_MAP.get(STARTUP_MODE)
+        if flag:
+            setattr(p, flag, True)
+            return STARTUP_MODE.upper()
+    return ''
 
 def _apply_startup_mode(plotter) -> None:
     idx = _SMOOTH_STARTUP_MAP.get(STARTUP_MODE)
@@ -39,13 +89,13 @@ def _apply_startup_mode(plotter) -> None:
         plotter._is_smooth = True
         plotter._smooth_cycle = idx
         if idx == 0:
+            plotter._is_tex = True
+        elif idx == 1:
+            plotter._is_lighting = True
+        else:
             plotter._is_lighting = True
             plotter._is_tex = True
             plotter._pbr_with_tex = True
-        elif idx == 1:
-            plotter._is_tex = True
-        else:
-            plotter._is_lighting = True
     else:
         flag = _STARTUP_FLAG_MAP.get(STARTUP_MODE)
         if flag:

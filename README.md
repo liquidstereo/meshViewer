@@ -15,18 +15,36 @@ A PyVista/VTK-based interactive 3D mesh viewer built on OpenGL, supporting stati
   `configs/settings_np_data.py`; default: point cloud).
   Cache is built on first load; run with `--no-cache` once after switching modes.
 
-- **NPZ/NPY depth map normalization** — New constants `DATA_NORMALIZE_LOG` and
-  `DATA_NORMALIZE_AXIS` in `configs/settings_np_data.py` improve depth distribution
-  for sequences with heavily skewed Z ranges (e.g., city-scale depth scans).
-  `DATA_NORMALIZE_LOG = True` applies a log1p transform before normalization;
+- **NPZ/NPY depth map normalization** — Four constants in
+  `configs/settings_np_data.py` control depth distribution for sequences with
+  heavily skewed Z ranges (e.g., city-scale depth scans).
+  `DATA_NORMALIZE = True` enables normalization globally;
+  `DATA_NORMALIZE_VALUE` sets the target scale (default: `10.0`);
+  `DATA_NORMALIZE_LOG = True` applies a log1p transform on Z before normalization;
   `DATA_NORMALIZE_AXIS = 'per_axis'` normalizes each axis independently.
-  Requires `--no-cache` rebuild after changing either value.
+  Requires `--no-cache` rebuild after changing any of these values.
 
 - **Per-type axis and flip settings** — `STARTUP_AXIS`, `STARTUP_REVERSE_*_AXIS`,
   and `FLIP_OBJECT_*` can now be overridden independently per input type via
   prefixed constants in each settings file (`MESH_STARTUP_AXIS`,
   `PT_STARTUP_AXIS`, `NP_STARTUP_AXIS`, `AUDIO_STARTUP_AXIS`, etc.).
   Set to `None` (default) to fall back to the shared value in `configs/settings.py`.
+
+### Fix
+
+- **GPU shader segfault on WSL2 prevented** — The depth-mode GPU shader
+  (`SetFragmentShaderCode` with a 256-entry GLSL vec3 array) caused a Mesa/D3D12
+  driver SEGFAULT during GPU compilation on WSL2. `_IS_WSL2` is now detected at
+  startup; when true, the GPU shader is skipped and the CPU depth-coloring path is
+  used instead. `faulthandler` is connected to the log file so C++ crashes produce
+  a traceable stack.
+
+### Feature
+
+- **HDRI IBL result cached** — The first `4`-key (Smooth) activation precomputes
+  IBL and stores it in `_hdri_ibl_cached`. Subsequent toggles call
+  `UseImageBasedLightingOn/Off` only, avoiding repeated HDRI precomputation and
+  reducing mode-switch latency.
 
 ### Performance
 
@@ -281,7 +299,7 @@ Input-type-specific settings are in `configs/settings_mesh.py`,
 | Key | Mode | Description |
 |---|---|---|
 | `q` | Default | Flat shading with headlight |
-| `4` | Smooth | PBR+Texture → Texture → PBR cycle, HDRI IBL |
+| `4` | Smooth | Texture(albedo) → PBR.SHADER → PBR+TEX cycle, HDRI IBL |
 | `s` | Smooth shading | Toggle smooth normal interpolation |
 | `3` | Wireframe | Normal-based colormap over wire mesh |
 | `5` | Isoline | Contour lines on selectable axis |
@@ -376,9 +394,10 @@ The Z distribution may be heavily skewed (e.g., most points near one depth extre
 Enable log-scale normalization and per-axis scaling in `configs/settings_np_data.py`:
 
 ```python
-DATA_NORMALIZE_LOG  = True        # log1p transform on Z before normalization
-DATA_NORMALIZE_AXIS = 'per_axis'  # normalize X, Y, Z axes independently
-DATA_NORMALIZE_VALUE = 2.0        # target scale (adjust to taste)
+DATA_NORMALIZE       = True        # enable normalization
+DATA_NORMALIZE_LOG   = True        # log1p transform on Z before normalization
+DATA_NORMALIZE_AXIS  = 'per_axis'  # normalize X, Y, Z axes independently
+DATA_NORMALIZE_VALUE = 10.0        # target scale (adjust to taste)
 ```
 
 Then rebuild the cache:

@@ -1,4 +1,5 @@
 import logging
+import platform as _platform
 import numpy as np
 import vtk as _vtk
 import matplotlib.cm as _cm
@@ -19,6 +20,7 @@ from process.mode.common import _hex_to_rgb, _set_mesh_input, _make_vtk_lut
 from process.mode.labels import AXIS_NAMES
 
 logger = logging.getLogger(__name__)
+_IS_WSL2 = 'microsoft' in _platform.uname().release.lower()
 
 _LUT_DEPTH: 'np.ndarray | None' = (
     None if MESH_DEPTH_COLOR.startswith('#')
@@ -126,6 +128,11 @@ def inject_depth_gpu_shader(
     shader_size_min: float = PT_CLOUD_SHADER_SIZE_MIN,
     shader_size_max: float = PT_CLOUD_SHADER_SIZE_MAX,
 ) -> bool:
+    if _IS_WSL2:
+        logger.info(
+            'WSL2: GPU depth shader disabled, using CPU path'
+        )
+        return False
     code = _build_depth_frag_code(
         fog=fog, is_pc=is_pc,
         depth_color=depth_color,
@@ -436,5 +443,8 @@ def apply_depth(p, mesh):
         prop.BackfaceCullingOn()
     else:
         prop.BackfaceCullingOff()
+    if is_pc:
+        _sz_def = NP_CLOUD_SIZE_DEFAULT if _is_np else PT_CLOUD_SIZE_DEFAULT
+        prop.SetPointSize(getattr(p, '_pt_cloud_size', _sz_def))
     actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
     p._prev_mode = 'depth'

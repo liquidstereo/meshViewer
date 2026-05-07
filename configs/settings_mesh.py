@@ -19,7 +19,7 @@ PBR_ANISOTROPY  = 0.1
 HDRI_INTENSITY  = 0.75
 HDRI_ROT_STEP   = 5.0
 
-STARTUP_MODE    = 'default'
+STARTUP_MODE    = 'pbr_tex.tex'
 
 DEFAULT_TEXTURE = False
 DEFAULT_SMOOTH  = False

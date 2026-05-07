@@ -48,3 +48,9 @@ def setup_logging(
     vtk_win.SetFileName(vtk_log_path)
     vtk_win.SetFlush(True)
     _vtk.vtkOutputWindow.SetInstance(vtk_win)
+
+    import faulthandler
+    _fault_fh = open(
+        log_path, 'a', encoding='utf-8', buffering=1,
+    )
+    faulthandler.enable(file=_fault_fh)

@@ -156,6 +156,7 @@ def _update_seq(plotter, idx):
 
 def render_loop(plotter, buffer) -> None:
     frame_count, fps_time = 0, time.time()
+    _first_frame_logged = False
     ui_time = last_update_time = last_cam_check_time = 0.0
     last_anim_time = 0.0
     total = buffer.total
@@ -250,6 +251,11 @@ def render_loop(plotter, buffer) -> None:
             mesh, tex = buffer.get(plotter._idx)
             t_get = time.perf_counter() - t0
             t0 = time.perf_counter()
+            if not _first_frame_logged and style_needed:
+                logger.info(
+                    'first_render: apply_visual_mode start'
+                    ' idx=%d', plotter._idx,
+                )
             try:
                 apply_visual_mode(plotter, mesh, tex)
                 plotter._render_error = ''
@@ -262,9 +268,14 @@ def render_loop(plotter, buffer) -> None:
                     if ': ' in _raw else _raw
                 )
                 _mode = _active_mode_name(plotter)
+                _ctx = (
+                    'point clouds'
+                    if getattr(plotter, '_n_faces', -1) == 0
+                    else 'this mesh'
+                )
                 _msg = (
                     f'[Error] Not supported "{_mode}" '
-                    f'for point clouds ({_detail}). '
+                    f'for {_ctx} ({_detail}). '
                     f'Reverting to default.'
                 )
                 logger.error(_msg)
@@ -283,6 +294,10 @@ def render_loop(plotter, buffer) -> None:
                     )
                     if hasattr(plotter, '_mesh_actor'):
                         plotter._mesh_actor.VisibilityOn()
+            if not _first_frame_logged and style_needed:
+                logger.info(
+                    'first_render: apply_visual_mode done',
+                )
             t_mode = time.perf_counter() - t0
             update_grid_bounds(plotter, _mesh_bounds(plotter, mesh))
             if rendered_idx < 0:
@@ -330,7 +345,12 @@ def render_loop(plotter, buffer) -> None:
                 _t_cap = time.perf_counter() - t0
 
             t0 = time.perf_counter()
+            if not _first_frame_logged:
+                logger.info('first_render: plotter.render() start')
             plotter.render()
+            if not _first_frame_logged:
+                logger.info('first_render: plotter.render() done')
+                _first_frame_logged = True
             t_render = time.perf_counter() - t0
             logger.debug(
                 'RENDER_DONE get=%.4fs style=%.4fs '

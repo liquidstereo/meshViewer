@@ -7,6 +7,7 @@ from configs.settings import (
     COLOR_BG, COLOR_MESH_NO_TEX, COLOR_MESH_DEFAULT,
     PBR_METALLIC, PBR_ROUGHNESS, PBR_ANISOTROPY,
     MESH_MATTE_COLOR,
+    PT_CLOUD_SIZE_DEFAULT, NP_CLOUD_SIZE_DEFAULT,
 )
 from process.mode.common import _set_mesh_input, _resolve_color
 
@@ -148,7 +149,8 @@ def apply_normal(p, mesh, preloaded_tex):
     prop.SetSpecular(0)
     prop.SetRepresentationToSurface()
     if getattr(p, '_n_faces', 1) == 0:
-        prop.SetPointSize(getattr(p, '_pt_cloud_size', 1))
+        _sz_def = NP_CLOUD_SIZE_DEFAULT if getattr(p, '_is_np_data', False) else PT_CLOUD_SIZE_DEFAULT
+        prop.SetPointSize(getattr(p, '_pt_cloud_size', _sz_def))
     prop.EdgeVisibilityOff()
     if is_backface:
         prop.BackfaceCullingOn()
@@ -156,7 +158,9 @@ def apply_normal(p, mesh, preloaded_tex):
         prop.BackfaceCullingOff()
 
     prop.SetColor(*_resolve_color(mesh_color))
-    prop.SetLighting(True)
+
+    _is_tex_albedo = _is_smooth and use_tex and not _use_pbr
+    prop.SetLighting(not _is_tex_albedo)
     prop.SetAmbient(0.0)
     prop.SetDiffuse(1.0)
     if _use_pbr:

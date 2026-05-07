@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 def setup_hdri(plotter) -> None:
     plotter._hdri_tex = None
+    plotter._hdri_ibl_cached = False
     if not HDRI_ENABLE:
         logger.debug('setup_hdri: skipped (HDRI_ENABLE=False)')
         return
@@ -60,13 +61,23 @@ def enable_hdri(plotter) -> None:
     renderer = plotter.renderer
     renderer.RemoveAllLights()
     renderer.AutomaticLightCreationOff()
-    plotter.set_environment_texture(tex)
+
+    if getattr(plotter, '_hdri_ibl_cached', False):
+        renderer.UseImageBasedLightingOn()
+        renderer.SetBackgroundTexture(tex)
+        renderer.Modified()
+    else:
+        plotter.set_environment_texture(tex)
+        plotter._hdri_ibl_cached = True
     logger.debug('enable_hdri: IBL ON (scene lights cleared)')
 
 def disable_hdri(plotter) -> None:
     if getattr(plotter, '_hdri_tex', None) is None:
         return
-    plotter.remove_environment_texture()
+
+    plotter.renderer.UseImageBasedLightingOff()
+    plotter.renderer.SetBackgroundTexture(None)
+    plotter.renderer.Modified()
     logger.debug('disable_hdri: IBL OFF')
 
 def rotate_hdri(plotter, angle_deg: float) -> None:

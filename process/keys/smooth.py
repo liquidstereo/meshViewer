@@ -25,16 +25,16 @@ def register(p, trigger, set_mode):
 
     def apply_smooth_cycle(idx):
         if idx == 0:
-            _enter_tex_base(is_lighting=True, pbr_with_tex=True)
-        elif idx == 1:
             _enter_tex_base(is_lighting=False, pbr_with_tex=False)
-        else:
+        elif idx == 1:
             p._is_smooth = True
             p._is_lighting = True
             p._is_tex = False
             p._pbr_with_tex = False
             p._prev_mode = None
             apply_lighting(p)
+        else:
+            _enter_tex_base(is_lighting=True, pbr_with_tex=True)
         enable_hdri(p)
 
     def _toggle_smooth():
@@ -64,4 +64,5 @@ def register(p, trigger, set_mode):
     bind_key(p, KEY_SMOOTH, _toggle_smooth)
     bind_key(p, KEY_SMOOTH_SHADING, _toggle_smooth_shading)
 
+    p._apply_smooth_cycle = apply_smooth_cycle
     return apply_smooth_cycle
