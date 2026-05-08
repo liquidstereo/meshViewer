@@ -49,6 +49,8 @@ _NPZ_INPUT_EXT = '.npz'
 
 _NPY_LIKE = frozenset({_NPY_EXT})
 
+_NP_SEQ_LIKE = _NPY_LIKE | frozenset({_NPZ_INPUT_EXT})
+
 _PRELOAD_TIMEOUT = 120
 
 _CACHE_BUILD_CHUNK = 100
@@ -82,7 +84,13 @@ def _check_preload_feasible(
             pts_path = os.path.join(frame_dir, 'points.npy')
             if not os.path.exists(pts_path):
                 return True
-            est_mb = os.path.getsize(pts_path) / (1024 ** 2) * 2.5
+            pts_file_sz = os.path.getsize(pts_path)
+
+            n_pts_raw = pts_file_sz // 12
+
+            n_pts = min(n_pts_raw, PT_SUBSAMPLE_THRESHOLD)
+
+            est_mb = n_pts * 24 / (1024 ** 2) * 2.5
     except Exception:
         return True
     total_est_mb = len(obj_files) * est_mb
@@ -366,9 +374,16 @@ class FrameBuffer:
             os.path.splitext(f)[1].lower() in _NPY_LIKE
             for f in obj_files
         )
-        _eff_workers = 1 if self._is_all_npy else (
-            IO_WORKER_COUNT if len(obj_files) >= 2 else 1
+        self._is_all_np_seq = all(
+            os.path.splitext(f)[1].lower() in _NP_SEQ_LIKE
+            for f in obj_files
         )
+        if self._is_all_npy or len(obj_files) < 2:
+            _eff_workers = 1
+        elif self._is_all_np_seq:
+            _eff_workers = min(4, WORKER_COUNT)
+        else:
+            _eff_workers = IO_WORKER_COUNT
         self._mesh_executor = ThreadPoolExecutor(
             max_workers=_eff_workers
         )
@@ -472,6 +487,7 @@ class FrameBuffer:
 
     def _preload_all_meshes(self) -> None:
         total = self.total
+
         _use_main = total == 1 or self._is_all_npy
         logger.info(
             'Preloading %d meshes (mode=%s)...',

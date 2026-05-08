@@ -32,6 +32,7 @@ from process.overlay.hud_texts import (
 logger = logging.getLogger(__name__)
 
 _FRAME_INTERVAL = 1.0 / TARGET_ANIM_FPS
+_PERF_LOG_INTERVAL = 10.0
 
 def _is_cam_dependent_mode(p) -> bool:
     return (
@@ -180,6 +181,10 @@ def render_loop(plotter, buffer) -> None:
             'PBO capture enabled: %dx%d n_comp=%d',
             _w, _h, _n_comp,
         )
+
+    _perf_n = 0
+    _perf_get_sum = _perf_mode_sum = _perf_render_sum = 0.0
+    _perf_last_log = time.perf_counter()
 
     logger.info('render_loop start: total_frames=%d', total)
     _loop_start = time.perf_counter()
@@ -357,6 +362,38 @@ def render_loop(plotter, buffer) -> None:
                 'ui=%.4fs render=%.4fs',
                 t_get, t_mode, t_ui, t_render,
             )
+            if anim_fired:
+                _t_total = t_get + t_mode + t_render
+                logger.debug(
+                    'FRAME_PERF [%d] get=%.1fms'
+                    ' mode=%.1fms render=%.1fms total=%.1fms',
+                    rendered_idx,
+                    t_get * 1000, t_mode * 1000,
+                    t_render * 1000, _t_total * 1000,
+                )
+                _perf_n += 1
+                _perf_get_sum += t_get
+                _perf_mode_sum += t_mode
+                _perf_render_sum += t_render
+                _now_perf = time.perf_counter()
+                if (
+                    _now_perf - _perf_last_log >= _PERF_LOG_INTERVAL
+                    and _perf_n > 0
+                ):
+                    logger.info(
+                        'PERF avg (last %d anim frames):'
+                        ' get=%.1fms mode=%.1fms'
+                        ' render=%.1fms total=%.1fms',
+                        _perf_n,
+                        _perf_get_sum / _perf_n * 1000,
+                        _perf_mode_sum / _perf_n * 1000,
+                        _perf_render_sum / _perf_n * 1000,
+                        (_perf_get_sum + _perf_mode_sum
+                         + _perf_render_sum) / _perf_n * 1000,
+                    )
+                    _perf_n = 0
+                    _perf_get_sum = _perf_mode_sum = _perf_render_sum = 0.0
+                    _perf_last_log = _now_perf
             if save_path and anim_fired:
                 if pbo_capture is not None:
                     _t_sub = time.perf_counter()
