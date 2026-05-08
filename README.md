@@ -57,6 +57,13 @@ An interactive 3D mesh viewer built on OpenGL with support for static meshes, fr
   `plotter.iren.process_events()`, removing a redundant conditional render per
   frame and improving steady-state FPS by ~33%.
 
+- **NPZ sequence playback speed improved ~27×** — Preload memory estimate now
+  accounts for subsampling (`PT_SUBSAMPLE_THRESHOLD`), correctly enabling
+  full preload instead of falling back to sliding-window mode. NPZ sequences
+  also use parallel executor loading (4 workers) instead of single-threaded,
+  reducing preload time from ~3 min to ~45 sec. Average per-frame mode time
+  drops from ~131 ms to ~5 ms (1,545-frame benchmark).
+
 ---
 
 ## Overview
