@@ -1,5 +1,7 @@
 import os
+import time
 import signal
+import logging
 import argparse
 from logging import DEBUG, INFO
 
@@ -18,8 +20,8 @@ from process.viewer import (
     init_vtk, load_files, create_plotter,
     detect_file_type, apply_input_format,
     setup_cam, build_scene, register_keys,
-    setup_window, show_window, load_seq_overlay,
-    apply_hide_info, run_loop,
+    setup_window, pre_warm_first_frame, show_window,
+    load_seq_overlay, apply_hide_info, run_loop,
     exec_audio_viewer,
 )
 from process.plotter import init_plotter_state
@@ -36,6 +38,7 @@ def parse_args():
                         const='', default=None)
     parser.add_argument('-c',   '--continuous', action='store_true', default=False)
     parser.add_argument('--no-cache',           action='store_true', default=False)
+    parser.add_argument('--preload-all',        action='store_true', default=False)
     parser.add_argument('--hide-info',          action='store_true', default=SHOW_HIDE_INFO)
     parser.add_argument('-v',   '--verbose', action='store_true', default=False)
     parser.add_argument('-r',   '--range',   type=str, default=None,
@@ -62,7 +65,7 @@ def parse_args():
     args.texture     = DEFAULT_TEXTURE
     args.animation   = SHOW_ANIMATION
     args.smooth      = DEFAULT_SMOOTH
-    args.preload_all = DEFAULT_PRELOAD_ALL
+    args.preload_all = args.preload_all or DEFAULT_PRELOAD_ALL
     args.frame_start = 0
     args.frame_end   = None
 
@@ -101,10 +104,18 @@ def exec_meshViewer(obj_files, args):
     init_actors(plotter)
     register_keys(plotter, buffer.total)
     setup_window(plotter)
+    pre_warm_first_frame(plotter, buffer)
     show_window(plotter)
+    _t_shown = time.perf_counter()
+    _log = logging.getLogger(__name__)
+    _log.info('Window shown — starting overlay init.')
     init_overlays(plotter)
     apply_hide_info(plotter)
     load_seq_overlay(plotter, args, buffer.total)
+    _log.info(
+        'Window->render_loop gap: %.3fs',
+        time.perf_counter() - _t_shown,
+    )
     run_loop(plotter, buffer)
 
 def main():

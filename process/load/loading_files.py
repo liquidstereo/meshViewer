@@ -29,11 +29,12 @@ from configs.settings import (
     DEFAULT_PRELOAD_ALL,
     DEFAULT_WINDOW_SIZE, DEFAULT_PRELOAD_AHEAD,
     PRELOAD_BACK_RATIO, EVICT_MEMORY_THRESHOLD,
-    WORKER_COUNT, CACHE_DIR_ROOT, TEX_EXTENSIONS,
+    WORKER_COUNT, IO_WORKER_COUNT, CACHE_DIR_ROOT, TEX_EXTENSIONS,
     TEXTURE_DIR_ROOT,
     AUTO_DECIMATE_THRESHOLD, AUTO_DECIMATE_MAX_CELLS, AUTO_DECIMATE_MAX_RATIO,
     PT_SUBSAMPLE_THRESHOLD, PT_SUBSAMPLE_TARGET,
     NP_SUBSAMPLE_THRESHOLD, NP_SUBSAMPLE_TARGET,
+    NPY_AS_POINTCLOUD,
 )
 from process.utils.extract_texture import extract_embedded_texture
 
@@ -46,18 +47,20 @@ _EVICT_RELEASE_INTERVAL = 2.0
 _NPY_EXT = '.npy'
 _NPZ_INPUT_EXT = '.npz'
 
-_NPY_LIKE = frozenset((_NPY_EXT, _NPZ_INPUT_EXT))
+_NPY_LIKE = frozenset({_NPY_EXT})
 
 _PRELOAD_TIMEOUT = 120
+
+_CACHE_BUILD_CHUNK = 100
+
+_BATCH_FILE_TIMEOUT = 60
 
 def _dispatch_cache_build(obj_path: str, npz_dir: str) -> None:
     if is_gs_ply(obj_path):
         frame_dir = _frame_cache_dir(obj_path, npz_dir)
         build_gs_npz_cache(obj_path, frame_dir)
-    elif os.path.splitext(obj_path)[1].lower() in (
-        _NPY_EXT, _NPZ_INPUT_EXT
-    ):
-        _build_single_npz(obj_path, npz_dir)
+    elif os.path.splitext(obj_path)[1].lower() == _NPZ_INPUT_EXT:
+        _build_npz_frame_cache(obj_path, npz_dir)
     else:
         _build_one_subprocess(obj_path, npz_dir)
 
@@ -105,7 +108,7 @@ def _build_one_subprocess(obj_path: str, npz_dir: str) -> None:
         [
             sys.executable, '-m',
             'process.load._cache_worker',
-            obj_path, npz_dir,
+            npz_dir, obj_path,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
@@ -113,15 +116,45 @@ def _build_one_subprocess(obj_path: str, npz_dir: str) -> None:
     )
     try:
         _, stderr = proc.communicate(timeout=_CACHE_WORKER_TIMEOUT)
-        if proc.returncode != 0:
-            msg = stderr.decode(errors='replace').strip()
-            raise RuntimeError(msg)
+        err_text = stderr.decode(errors='replace').strip()
+        if err_text:
+            raise RuntimeError(err_text)
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
         raise RuntimeError(
             f'VTK hang timeout ({_CACHE_WORKER_TIMEOUT}s):'
             f' {os.path.basename(obj_path)}'
+        )
+
+def _build_batch_subprocess(batch: list, npz_dir: str) -> int:
+    env = os.environ.copy()
+    env['OMP_NUM_THREADS'] = '1'
+    timeout = _CACHE_WORKER_TIMEOUT + _BATCH_FILE_TIMEOUT * len(batch)
+    proc = subprocess.Popen(
+        [sys.executable, '-m', 'process.load._cache_worker', npz_dir] + batch,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    try:
+        _, stderr = proc.communicate(timeout=timeout)
+        err_lines = [
+            ln for ln in stderr.decode(errors='replace').splitlines()
+            if ln.startswith(('ERROR ', 'TIMEOUT '))
+        ]
+        for ln in err_lines:
+            logger.error('Batch cache: %s', ln)
+        return len(err_lines)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        logger.error(
+            'Batch subprocess timeout (%ds): %d files.',
+            timeout, len(batch),
+        )
+        raise RuntimeError(
+            f'Batch timeout ({timeout}s): {len(batch)} files'
         )
 
 def _frame_cache_dir(obj_path: str, npz_dir: str) -> str:
@@ -135,6 +168,129 @@ def _is_cache_stale(src_path: str, frame_dir: str) -> bool:
         if os.path.exists(sentinel):
             return os.path.getmtime(src_path) > os.path.getmtime(sentinel)
     return True
+
+def _build_npz_fallback_pts_and_faces(
+    arr: np.ndarray, frame_dir: str,
+) -> np.ndarray:
+    from process.load.load_np import (
+        _normalize_pts, _normalize_heightmap_pts,
+    )
+    if arr.ndim == 2 and arr.shape[1] in (3, 6):
+        pts = _normalize_pts(arr[:, :3])
+        if arr.shape[1] == 6:
+            rgb = arr[:, 3:6]
+            if rgb.max() <= 1.0:
+                rgb = (rgb * 255.0).clip(0, 255)
+            _p = os.path.join(frame_dir, 'pd__rgb_packed.npy')
+            np.save(_p, np.ascontiguousarray(rgb.astype(np.uint8)))
+            evict_file_cache(_p)
+        return pts
+    if arr.ndim == 2:
+        h, w = arr.shape
+        x = np.linspace(0.0, float(w), w, dtype=np.float32)
+        y = np.linspace(0.0, float(h), h, dtype=np.float32)
+        xx, yy = np.meshgrid(x, y)
+        raw = np.column_stack(
+            [xx.ravel(), yy.ravel(), arr.ravel()]
+        ).astype(np.float32)
+        pts = np.ascontiguousarray(_normalize_heightmap_pts(raw))
+        if not NPY_AS_POINTCLOUD:
+            idx = np.arange(h * w, dtype=np.int32).reshape(h, w)
+            i0 = idx[:-1, :-1].ravel()
+            i1 = idx[:-1, 1:].ravel()
+            i2 = idx[1:, 1:].ravel()
+            i3 = idx[1:, :-1].ravel()
+            n_tri = (h - 1) * (w - 1)
+            three = np.full(n_tri, 3, dtype=np.int32)
+            faces = np.concatenate([
+                np.column_stack([three, i0, i1, i2]).ravel(),
+                np.column_stack([three, i0, i2, i3]).ravel(),
+            ])
+            _p = os.path.join(frame_dir, 'faces.npy')
+            np.save(_p, faces)
+            evict_file_cache(_p)
+        return pts
+    if arr.ndim == 3:
+        h, w, c = arr.shape
+        if c not in (3, 6):
+            raise ValueError(
+                f'Unsupported NPZ array shape: {arr.shape}'
+            )
+        from process.load.load_np import _normalize_pts as _np
+        pts = _np(
+            np.ascontiguousarray(arr[..., :3].reshape(-1, 3))
+        )
+        if c == 6:
+            raw_rgb = arr[..., 3:6].reshape(-1, 3).astype(np.float32)
+            if raw_rgb.max() <= 1.0:
+                raw_rgb = (raw_rgb * 255.0).clip(0, 255)
+            _p = os.path.join(frame_dir, 'pd__rgb_packed.npy')
+            np.save(_p, np.ascontiguousarray(raw_rgb.astype(np.uint8)))
+            evict_file_cache(_p)
+        return pts
+    raise ValueError(
+        f'Unsupported NPZ array shape: {arr.shape}'
+    )
+
+def _build_npz_frame_cache(obj_path: str, npz_dir: str) -> None:
+    from process.load.load_np import (
+        _normalize_pts, _resolve_npz_pts_face_color, _npz_color_to_uint8,
+    )
+    try:
+        data = np.load(obj_path)
+        keys = set(data.files)
+        frame_dir = _frame_cache_dir(obj_path, npz_dir)
+        os.makedirs(frame_dir, exist_ok=True)
+        pts = None
+
+        if 'xyz' in keys and 'features' in keys:
+            pts = _normalize_pts(data['xyz'].astype(np.float32))
+            if 'color' in keys:
+                color = data['color']
+                if color.ndim == 2 and color.shape[1] >= 3:
+                    _p = os.path.join(frame_dir, 'pd__rgb_packed.npy')
+                    np.save(_p, np.ascontiguousarray(
+                        color[:, :3], dtype=np.uint8
+                    ))
+                    evict_file_cache(_p)
+        else:
+            pts_key, face_key, color_key = _resolve_npz_pts_face_color(keys)
+            if pts_key is not None:
+                pts = _normalize_pts(
+                    np.ascontiguousarray(data[pts_key].astype(np.float32))
+                )
+                if face_key is not None:
+                    faces = data[face_key]
+                    if (faces.size > 0
+                            and int(faces.max()) < np.iinfo(np.int32).max):
+                        faces = faces.astype(np.int32)
+                    _p = os.path.join(frame_dir, 'faces.npy')
+                    np.save(_p, faces)
+                    evict_file_cache(_p)
+                if color_key is not None:
+                    color = _npz_color_to_uint8(data[color_key])
+                    if color.ndim == 2 and color.shape[1] >= 3:
+                        _p = os.path.join(frame_dir, 'pd__rgb_packed.npy')
+                        np.save(_p, np.ascontiguousarray(color[:, :3]))
+                        evict_file_cache(_p)
+            else:
+                if not data.files:
+                    raise ValueError(f'Empty NPZ: {obj_path}')
+                arr = data[data.files[0]].astype(np.float32)
+                pts = _build_npz_fallback_pts_and_faces(arr, frame_dir)
+
+        if pts is None:
+            raise ValueError(
+                f'Could not extract points from NPZ: {obj_path}'
+            )
+        _p = os.path.join(frame_dir, 'points.npy')
+        np.save(_p, pts)
+        evict_file_cache(_p)
+    except Exception as e:
+        logger.error(
+            'NPZ frame cache build failed [%s]: %s', obj_path, e
+        )
+        raise
 
 def _build_single_npz(obj_path: str, npz_dir: str) -> None:
     if is_gs_ply(obj_path):
@@ -172,27 +328,18 @@ def _build_single_npz(obj_path: str, npz_dir: str) -> None:
 def _load_mesh_frame(frame_dir: str) -> pv.PolyData:
     if os.path.exists(os.path.join(frame_dir, GS_CACHE_FILE)):
         return load_gs_frame(frame_dir)
-    pts = np.array(
-        np.load(os.path.join(frame_dir, 'points.npy'), mmap_mode='r')
-    )
+    pts = np.load(os.path.join(frame_dir, 'points.npy'))
     faces_path = os.path.join(frame_dir, 'faces.npy')
-    faces = (
-        np.array(np.load(faces_path, mmap_mode='r'))
-        if os.path.exists(faces_path) else None
-    )
+    faces = np.load(faces_path) if os.path.exists(faces_path) else None
     mesh = pv.PolyData(pts, faces)
     for fname in sorted(os.listdir(frame_dir)):
         if not (fname.startswith('pd_') and fname.endswith('.npy')):
             continue
         key = fname[3:-4]
-        mesh.point_data[key] = np.array(
-            np.load(os.path.join(frame_dir, fname), mmap_mode='r')
-        )
+        mesh.point_data[key] = np.load(os.path.join(frame_dir, fname))
     tc_path = os.path.join(frame_dir, 'tcoords.npy')
     if os.path.exists(tc_path):
-        mesh.active_texture_coordinates = np.array(
-            np.load(tc_path, mmap_mode='r')
-        )
+        mesh.active_texture_coordinates = np.load(tc_path)
     return mesh
 
 class FrameBuffer:
@@ -220,7 +367,7 @@ class FrameBuffer:
             for f in obj_files
         )
         _eff_workers = 1 if self._is_all_npy else (
-            WORKER_COUNT if len(obj_files) >= 4 else 1
+            IO_WORKER_COUNT if len(obj_files) >= 2 else 1
         )
         self._mesh_executor = ThreadPoolExecutor(
             max_workers=_eff_workers
@@ -560,13 +707,24 @@ class FrameBuffer:
             return
 
         workers = WORKER_COUNT
+        gs_files = [f for f in missing if is_gs_ply(f)]
+        npz_files = [
+            f for f in missing
+            if os.path.splitext(f)[1].lower() == _NPZ_INPUT_EXT
+            and not is_gs_ply(f)
+        ]
+        mesh_files = [
+            f for f in missing
+            if not is_gs_ply(f)
+            and os.path.splitext(f)[1].lower() != _NPZ_INPUT_EXT
+        ]
+        total = len(missing)
         logger.info(
-            'Building frame cache: %d stale/missing (workers=%d)...',
-            len(missing), workers,
+            'Building frame cache: %d files'
+            ' (gs=%d, npz=%d, mesh=%d, workers=%d)...',
+            total, len(gs_files), len(npz_files), len(mesh_files), workers,
         )
 
-        total = len(missing)
-        chunk_size = max(1, (total + 1) // 2)
         err_count = 0
         try:
             with alive_bar(
@@ -577,28 +735,98 @@ class FrameBuffer:
                 elapsed=True, manual=False,
                 enrich_print=False, force_tty=True,
             ) as bar:
-                for i in range(0, total, chunk_size):
-                    chunk = missing[i: i + chunk_size]
+
+                if gs_files:
+                    chunk_size = _CACHE_BUILD_CHUNK
+                    for i in range(0, len(gs_files), chunk_size):
+                        chunk = gs_files[i: i + chunk_size]
+                        with ThreadPoolExecutor(
+                            max_workers=workers
+                        ) as exe:
+                            futures = {
+                                exe.submit(
+                                    _dispatch_cache_build,
+                                    f, self._npz_dir,
+                                ): f
+                                for f in chunk
+                            }
+                            for fut in as_completed(futures):
+                                try:
+                                    fut.result()
+                                except Exception as e:
+                                    err_count += 1
+                                    logger.error(
+                                        'GS cache error [%s]: %s',
+                                        futures[fut], e,
+                                    )
+                                bar()
+                        release_process_memory(
+                            f'gs {min(i + chunk_size, len(gs_files))}'
+                            f'/{len(gs_files)}'
+                        )
+
+                if npz_files:
+                    chunk_size = _CACHE_BUILD_CHUNK
+                    for i in range(0, len(npz_files), chunk_size):
+                        chunk = npz_files[i: i + chunk_size]
+                        with ThreadPoolExecutor(
+                            max_workers=workers
+                        ) as exe:
+                            futures = {
+                                exe.submit(
+                                    _build_npz_frame_cache,
+                                    f, self._npz_dir,
+                                ): f
+                                for f in chunk
+                            }
+                            for fut in as_completed(futures):
+                                try:
+                                    fut.result()
+                                except Exception as e:
+                                    err_count += 1
+                                    logger.error(
+                                        'NPZ cache error [%s]: %s',
+                                        futures[fut], e,
+                                    )
+                                bar()
+                        release_process_memory(
+                            f'npz {min(i + chunk_size, len(npz_files))}'
+                            f'/{len(npz_files)}'
+                        )
+
+                if mesh_files:
+                    batch_size = max(
+                        1,
+                        (len(mesh_files) + workers - 1) // workers,
+                    )
+                    batches = [
+                        mesh_files[i: i + batch_size]
+                        for i in range(0, len(mesh_files), batch_size)
+                    ]
+                    logger.info(
+                        'Batch subprocess: %d files -> %d batches'
+                        ' (~%d files/batch).',
+                        len(mesh_files), len(batches), batch_size,
+                    )
                     with ThreadPoolExecutor(max_workers=workers) as exe:
                         futures = {
                             exe.submit(
-                                _dispatch_cache_build, f, self._npz_dir
-                            ): f
-                            for f in chunk
+                                _build_batch_subprocess,
+                                b, self._npz_dir,
+                            ): b
+                            for b in batches
                         }
                         for fut in as_completed(futures):
                             try:
-                                fut.result()
+                                err_count += fut.result()
                             except Exception as e:
-                                err_count += 1
+                                err_count += len(futures[fut])
                                 logger.error(
-                                    'Cache build error [%s]: %s',
-                                    futures[fut], e,
+                                    'Batch subprocess error: %s', e,
                                 )
-                            bar()
-                    release_process_memory(
-                        f'{min(i + chunk_size, total)}/{total}'
-                    )
+                            for _ in futures[fut]:
+                                bar()
+                    release_process_memory('mesh_batch_complete')
 
         except KeyboardInterrupt:
             logger.warning('Frame cache build interrupted.')
@@ -630,7 +858,10 @@ class FrameBuffer:
         else:
             frame_dir = _frame_cache_dir(obj_path, self._npz_dir)
             if not os.path.isdir(frame_dir):
-                _build_one_subprocess(obj_path, self._npz_dir)
+                if _ext == _NPZ_INPUT_EXT:
+                    _build_npz_frame_cache(obj_path, self._npz_dir)
+                else:
+                    _build_one_subprocess(obj_path, self._npz_dir)
             if os.path.isdir(frame_dir):
                 mesh = _load_mesh_frame(frame_dir)
             else:

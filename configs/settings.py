@@ -2,7 +2,9 @@ from configs.theme import (
     apply_theme as _apply_theme,
     make_fontsize_fn as _make_fontsize_fn,
 )
-from configs.system_resources import get_usable_cpu, compute_window_size
+from configs.system_resources import (
+    get_usable_cpu, get_io_workers, compute_window_size,
+)
 from configs.settings_mesh import *          # noqa: F401, F403
 from configs.settings_point_cloud import *   # noqa: F401, F403
 from configs.settings_audio import *         # noqa: F401, F403
@@ -57,6 +59,7 @@ DEFAULT_PRELOAD_AHEAD   = int(DEFAULT_WINDOW_SIZE * 0.875)
 PRELOAD_BACK_RATIO      = 0.50
 EVICT_MEMORY_THRESHOLD  = 0.875
 WORKER_COUNT            = get_usable_cpu(DEFAULT_RESERVED_CORES, DEFAULT_SYSTEM_USAGE)
+IO_WORKER_COUNT         = get_io_workers(DEFAULT_SYSTEM_USAGE)
 
 # --- Window ---
 WINDOW_TITLE         = 'vtkOpenGLMeshViewer'

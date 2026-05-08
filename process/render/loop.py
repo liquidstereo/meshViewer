@@ -181,7 +181,8 @@ def render_loop(plotter, buffer) -> None:
             _w, _h, _n_comp,
         )
 
-    logger.debug('render_loop started: total_frames=%d', total)
+    logger.info('render_loop start: total_frames=%d', total)
+    _loop_start = time.perf_counter()
 
     Msg.Dim(f'Load System Usage... Please Wait...', flush=True)
 
@@ -216,11 +217,6 @@ def render_loop(plotter, buffer) -> None:
             if cam_state != getattr(plotter, '_last_cam_state', None):
                 plotter._last_cam_state = cam_state
                 style_needed = True
-
-                if getattr(plotter, '_n_faces', 1) == 0:
-                    from process.apply_mode import sync_pt_size_uniforms
-                    sync_pt_size_uniforms(plotter)
-
                 if getattr(plotter, '_n_faces', 1) == 0:
                     from process.apply_mode import sync_pt_size_uniforms
                     sync_pt_size_uniforms(plotter)
@@ -349,7 +345,11 @@ def render_loop(plotter, buffer) -> None:
                 logger.info('first_render: plotter.render() start')
             plotter.render()
             if not _first_frame_logged:
-                logger.info('first_render: plotter.render() done')
+                logger.info(
+                    'first_render: plotter.render() done'
+                    ' (%.3fs from loop start)',
+                    time.perf_counter() - _loop_start,
+                )
                 _first_frame_logged = True
             t_render = time.perf_counter() - t0
             logger.debug(
@@ -475,7 +475,15 @@ def render_loop(plotter, buffer) -> None:
                 plotter._blink_thread_ref = None
             _prev_playing = is_playing
 
-        time.sleep(0.001)
+        if plotter._is_playing:
+            _nxt = last_anim_time + _FRAME_INTERVAL
+            _remain = _nxt - time.time() - 0.001
+            if _remain > 0.002:
+                time.sleep(_remain)
+            else:
+                time.sleep(0.0002)
+        else:
+            time.sleep(0.004)
 
     if _blink_stop is not None:
         _blink_stop.set()

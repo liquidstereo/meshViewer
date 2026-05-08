@@ -184,6 +184,7 @@ def _apply_pt_fog_gpu(p, mesh, mapper, actor, base_size: float, use_rgb: bool) -
             logger.warning('pt fog uniform update failed: %s', e)
             p._pt_fog_gpu = False; return
 
+    cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
     _color_key = (id(mesh), use_rgb)
     if getattr(p, '_pt_fog_color_key', None) != _color_key:
         raw = _pack_vertex_colors(mesh) if use_rgb else None
@@ -195,7 +196,6 @@ def _apply_pt_fog_gpu(p, mesh, mapper, actor, base_size: float, use_rgb: bool) -
             )
             c = [int(v * 255) for v in _hex_to_rgb(_pc)]
             raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
-        cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
         p._pt_color_buf = raw
         vtk_c = numpy_to_vtk(raw, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
         vtk_c.SetName('PtFogColors')
@@ -260,13 +260,13 @@ def apply_pt_normal(p, mesh) -> None:
         p._pt_shader_size = _base if ok else 0
     if _shader_size != 0: update_pt_size_uniforms(p, actor)
     _opacity = getattr(p, '_mesh_opacity', 1.0)
+    cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
     _color_key = (id(mesh), use_rgb)
     if getattr(p, '_pt_normal_color_key', None) == _color_key:
         actor.GetProperty().SetOpacity(_opacity)
         actor.VisibilityOff() if _opacity <= 0.0 else actor.VisibilityOn()
         return
     p._pt_normal_color_key = _color_key
-    cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
     if MESH_MATTE_COLOR is not None:
         c = [int(v * 255) for v in _hex_to_rgb(MESH_MATTE_COLOR)]
         raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
@@ -389,6 +389,7 @@ def apply_pt_fog(p, mesh) -> None:
         )
         p._pt_shader_size = _base if ok else 0
     if _shader_size != 0: update_pt_size_uniforms(p, actor)
+    cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
     _key = (pt_cam_key(p, mesh), use_rgb, use_depth_cmap)
     if getattr(p, '_pt_fog_cache_key', None) == _key:
         actor.GetProperty().SetOpacity(_opacity)
@@ -426,7 +427,7 @@ def apply_pt_fog(p, mesh) -> None:
         blended = (
             (base * (1.0 - t) + bg_arr * t).clip(0.0, 1.0) * 255
         ).astype(np.uint8)
-    cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly'); p._pt_color_buf = blended
+    p._pt_color_buf = blended
     vtk_c = numpy_to_vtk(blended, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
     vtk_c.SetName('PtFogColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars()

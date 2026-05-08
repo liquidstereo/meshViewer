@@ -162,6 +162,16 @@ def setup_window(plotter) -> None:
         logger.debug('setup_window: MSAA disabled for PBO capture')
     hide_loading()
 
+def pre_warm_first_frame(plotter, buffer) -> None:
+    from process.apply_mode import apply_visual_mode
+    mesh0, tex0 = buffer.first_frame
+    try:
+        apply_visual_mode(plotter, mesh0, tex0)
+    except Exception as e:
+        logger.warning('pre_warm_first_frame failed: %s', e)
+    finally:
+        plotter._needs_update = True
+
 def show_window(plotter) -> None:
     t = time.perf_counter()
     center_window(plotter, WINDOW_MONITOR_INDEX)
@@ -169,7 +179,7 @@ def show_window(plotter) -> None:
     if RENDER_FXAA and RENDER_MSAA_SAMPLES == 0:
         plotter.renderer.SetUseFXAA(True)
     apply_key_filter_style(plotter)
-    logger.debug('plotter.show: %.4fs', time.perf_counter() - t)
+    logger.info('show_window: %.3fs', time.perf_counter() - t)
 
 def load_seq_overlay(plotter, args, total: int) -> None:
     seq_files = load_seq_files(args, total)

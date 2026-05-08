@@ -195,7 +195,7 @@ meshViewer/
 │       └── track.wav
 └── assets/
     └── hdri/
-        └── pav_studio_03_4k.hdr   ← ⚠️ NOT included — download separately (see below)
+        └── pav_studio_03_4k.hdr   ← NOT included — download separately (see below)
 ```
 
 Texture lookup is performed automatically when a mesh is loaded:
@@ -211,7 +211,7 @@ This requires an `.hdr` file placed at:
 assets/hdri/pav_studio_03_4k.hdr
 ```
 
-> ⚠️ **This file is not included** in the repository due to its large file size (~80 MB).
+> **This file is not included** in the repository due to its large file size (~80 MB).
 
 **Download instructions:**
 

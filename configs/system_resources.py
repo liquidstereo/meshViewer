@@ -3,10 +3,18 @@ import psutil
 
 def get_usable_cpu(reserved_core: int = 2,
                    default_usage: float = 0.80) -> int:
-    cpu_count = psutil.cpu_count(logical=False) or 1
+    cpu_count = (
+        psutil.cpu_count(logical=False)
+        or psutil.cpu_count(logical=True)
+        or 1
+    )
     usable_cores = max(1, cpu_count - reserved_core)
     optimal_workers = max(1, int(usable_cores * default_usage))
     return optimal_workers
+
+def get_io_workers(usage: float = 0.80) -> int:
+    cpu_count = psutil.cpu_count(logical=True) or 1
+    return max(1, int(cpu_count * usage))
 
 def get_system_info() -> dict:
     try:
