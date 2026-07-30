@@ -10,11 +10,12 @@ from process.window.display import get_window_sizes
 
 logger = logging.getLogger(__name__)
 
-def build_plotter() -> Plotter:
+def build_plotter(off_screen: bool = False) -> Plotter:
     win_w, win_h = get_window_sizes(WINDOW_MONITOR_INDEX)
     plotter = Plotter(
         title=WINDOW_TITLE,
         window_size=[win_w, win_h],
+        off_screen=off_screen,
     )
     rw = plotter.render_window
     if SAVE_ALPHA:
@@ -40,5 +41,7 @@ def build_plotter() -> Plotter:
         rw.SetPointSmoothing(RENDER_POINT_SMOOTHING)
     rw.SetDesiredUpdateRate(0.001)
     object.__setattr__(plotter, 'pickpoint', None)
-    logger.debug('build_plotter: %dx%d', win_w, win_h)
+    logger.debug(
+        'build_plotter: %dx%d off_screen=%s', win_w, win_h, off_screen,
+    )
     return plotter

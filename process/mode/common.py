@@ -4,7 +4,8 @@ import pyvista as pv
 import matplotlib.cm as cm
 from vtk.util.numpy_support import numpy_to_vtk
 
-from configs.settings import COLOR_BG, OFFSET_MESH_BACK
+from configs.settings_font import resolve_font_file
+from configs.settings import COLOR_BG, FONT_PRIORITY, OFFSET_MESH_BACK
 
 def _get_cam_dir(plotter) -> np.ndarray:
     cam_pos = np.array(plotter.camera.position)
@@ -23,10 +24,20 @@ def _set_font_family(prop, family: str) -> None:
     f = family.lower()
     if f == 'arial':
         prop.SetFontFamilyToArial()
-    elif f == 'times':
+        return
+    if f == 'times':
         prop.SetFontFamilyToTimes()
-    else:
+        return
+    if f == 'courier':
         prop.SetFontFamilyToCourier()
+        return
+    path = resolve_font_file(family, FONT_PRIORITY)
+    if not path:
+        prop.SetFontFamilyToCourier()
+        return
+
+    prop.SetFontFamily(vtk.VTK_FONT_FILE)
+    prop.SetFontFile(path)
 
 def _resolve_color(color):
     if color.startswith('#'):

@@ -13,11 +13,15 @@ from configs.settings import (
     POINT_FOG,
     NP_STARTUP_MODE_POINT_CLOUD,
     NP_CLOUD_SIZE_DEFAULT, NP_CLOUD_SIZE_POINT_WHITE, NP_CLOUD_SIZE_DEPTH,
+    SAVE_EXT, SAVE_QUALITY,
     resolve_axis_settings,
 )
 from process.mode.labels import (
     SMOOTH_CYCLE_LABELS,
     LBL_PT_CLOUD_RGB, LBL_PT_CLOUD_WHITE, LBL_PT_CLOUD_DEPTH,
+)
+from process.load.cache_policy import (
+    effective_startup_mode, startup_mode_override,
 )
 
 _AXIS_SWAP_MAP = {'OFF': 0, 'YZ': 1, 'XZ': 2, 'XY': 3}
@@ -40,10 +44,22 @@ _SMOOTH_STARTUP_MAP = {
     'pbr_tex':     2,
 }
 
+MESH_STARTUP_MODES = frozenset(_STARTUP_FLAG_MAP) | frozenset(
+    _SMOOTH_STARTUP_MAP
+) | {'default'}
+PT_STARTUP_MODES = frozenset({'point_rgb', 'point_white', 'depth'})
+ALL_STARTUP_MODES = MESH_STARTUP_MODES | PT_STARTUP_MODES
+
+def valid_modes_for(is_point_cloud: bool) -> frozenset:
+    return PT_STARTUP_MODES if is_point_cloud else MESH_STARTUP_MODES
+
 def restore_startup_mode(p) -> str:
     if getattr(p, '_n_faces', 1) == 0:
         _is_np = getattr(p, '_is_np_data', False)
         mode = NP_STARTUP_MODE_POINT_CLOUD if _is_np else STARTUP_MODE_POINT_CLOUD
+        _ov = startup_mode_override()
+        if _ov in PT_STARTUP_MODES:
+            mode = _ov
         if _is_np:
             _sz_rgb, _sz_white, _sz_depth = (
                 NP_CLOUD_SIZE_DEFAULT, NP_CLOUD_SIZE_POINT_WHITE, NP_CLOUD_SIZE_DEPTH
@@ -68,7 +84,8 @@ def restore_startup_mode(p) -> str:
             p._pt_cloud_size = _sz_depth
             return LBL_PT_CLOUD_DEPTH
         return ''
-    idx = _SMOOTH_STARTUP_MAP.get(STARTUP_MODE)
+    mode = effective_startup_mode()
+    idx = _SMOOTH_STARTUP_MAP.get(mode)
     if idx is not None:
         fn = getattr(p, '_apply_smooth_cycle', None)
         if fn:
@@ -77,14 +94,34 @@ def restore_startup_mode(p) -> str:
             fn(idx)
             return SMOOTH_CYCLE_LABELS[idx]
     else:
-        flag = _STARTUP_FLAG_MAP.get(STARTUP_MODE)
+        flag = _STARTUP_FLAG_MAP.get(mode)
         if flag:
             setattr(p, flag, True)
-            return STARTUP_MODE.upper()
+            return mode.upper()
     return ''
 
+def current_mode_name(p) -> str:
+    if getattr(p, '_n_faces', 1) == 0:
+        if getattr(p, '_pt_cloud_depth', False):
+            return 'depth'
+        return (
+            'point_rgb'
+            if getattr(p, '_pt_cloud_use_rgb', True)
+            else 'point_white'
+        )
+    for mode, flag in _STARTUP_FLAG_MAP.items():
+        if getattr(p, flag, False):
+            return mode
+    if getattr(p, '_is_smooth', False):
+        idx = getattr(p, '_smooth_cycle', 0)
+        for mode, i in _SMOOTH_STARTUP_MAP.items():
+            if i == idx:
+                return mode
+    return 'default'
+
 def _apply_startup_mode(plotter) -> None:
-    idx = _SMOOTH_STARTUP_MAP.get(STARTUP_MODE)
+    mode = effective_startup_mode()
+    idx = _SMOOTH_STARTUP_MAP.get(mode)
     if idx is not None:
         plotter._is_smooth = True
         plotter._smooth_cycle = idx
@@ -97,7 +134,10 @@ def _apply_startup_mode(plotter) -> None:
             plotter._is_tex = True
             plotter._pbr_with_tex = True
     else:
-        flag = _STARTUP_FLAG_MAP.get(STARTUP_MODE)
+
+        plotter._is_smooth = False
+        plotter._smooth_cycle = 0
+        flag = _STARTUP_FLAG_MAP.get(mode)
         if flag:
             setattr(plotter, flag, True)
 
@@ -109,7 +149,10 @@ def init_plotter_state(plotter, args) -> None:
     plotter._save_path = args.save or None
     plotter._save_dir = args.save or None
     plotter._save_loop = args.continuous
+    plotter._headless = getattr(args, 'headless', False)
     plotter._save_counter = 0
+    plotter._save_ext = getattr(args, 'format', SAVE_EXT)
+    plotter._save_quality = getattr(args, 'quality', SAVE_QUALITY)
     plotter._is_playing = args.animation
     plotter._is_smooth = args.smooth
     plotter._smooth_cycle = 0

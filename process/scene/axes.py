@@ -1,9 +1,11 @@
 import pyvista as pv
 import configs.settings as _cfg
 
-from configs.settings import AXIS_COLORS, AXIS_VIEWPORT
+from configs.settings import AXIS_COLORS, AXIS_VIEWPORT, DISPLAY_AXES
 
 def setup_axes_marker(plotter):
+    if not DISPLAY_AXES:
+        return
     axes = pv.create_axes_marker()
     props = [
         axes.GetXAxisCaptionActor2D().GetCaptionTextProperty(),

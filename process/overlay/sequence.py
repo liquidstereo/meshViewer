@@ -10,6 +10,39 @@ from configs.settings import (
 
 logger = logging.getLogger(__name__)
 
+_MAX_READ_FAILS = 10
+
+_IMAGE_HEADS = {
+    '.png':  b'\x89PNG\r\n\x1a\n',
+    '.jpg':  b'\xff\xd8',
+    '.jpeg': b'\xff\xd8',
+    '.bmp':  b'BM',
+}
+_IMAGE_TAILS = {
+    '.png':  b'IEND',
+    '.jpg':  b'\xff\xd9',
+    '.jpeg': b'\xff\xd9',
+}
+_TAIL_SCAN_BYTES = 64
+
+def _is_complete_image(path: str) -> bool:
+    ext = os.path.splitext(path)[1].lower()
+    head = _IMAGE_HEADS.get(ext)
+    tail = _IMAGE_TAILS.get(ext)
+    try:
+        size = os.path.getsize(path)
+        if size < 32:
+            return False
+        with open(path, 'rb') as fh:
+            if head is not None and fh.read(len(head)) != head:
+                return False
+            if tail is None:
+                return True
+            fh.seek(-min(_TAIL_SCAN_BYTES, size), os.SEEK_END)
+            return tail in fh.read()
+    except OSError:
+        return False
+
 _READER_MAP = {
     '.png':  vtk.vtkPNGReader,
     '.jpg':  vtk.vtkJPEGReader,
@@ -55,6 +88,7 @@ class SequenceOverlay:
             )
 
         self._last_file = None
+        self._fail_count = 0
 
         rw = plotter.render_window
         win_w, win_h = rw.GetSize()
@@ -135,6 +169,61 @@ class SequenceOverlay:
         else:
             self._renderer.DrawOff()
 
+    def _reset_reader(self, path: str) -> None:
+        self._reader = _create_reader(path)
+        self._resize.SetInputConnection(self._reader.GetOutputPort())
+        self._last_file = None
+
+    def _read_image(self, path: str) -> bool:
+        if not os.path.isfile(path):
+            logger.error(
+                'Sequence image missing: %s', os.path.basename(path),
+            )
+            return False
+        if self._reader.CanReadFile(path) == 0:
+            logger.error(
+                'Sequence image unreadable: %s', os.path.basename(path),
+            )
+            return False
+
+        if not _is_complete_image(path):
+            logger.error(
+                'Sequence image incomplete (truncated): %s',
+                os.path.basename(path),
+            )
+            return False
+        self._reader.SetFileName(path)
+        self._reader.Modified()
+        self._reader.Update()
+        code = self._reader.GetErrorCode()
+        if code != 0:
+            logger.error(
+                'Sequence image read failed (vtk error %d): %s',
+                code, os.path.basename(path),
+            )
+            self._reset_reader(path)
+            return False
+        dims = self._reader.GetOutput().GetDimensions()
+        if dims[0] < 1 or dims[1] < 1:
+            logger.error(
+                'Sequence image has empty extent %s: %s',
+                dims, os.path.basename(path),
+            )
+            self._reset_reader(path)
+            return False
+        return True
+
+    def _on_read_failure(self) -> None:
+        self._fail_count += 1
+        if self._fail_count < _MAX_READ_FAILS:
+            return
+        logger.error(
+            'Sequence overlay disabled after %d read failures.',
+            self._fail_count,
+        )
+        self.set_visible(False)
+        self._files = []
+
     def update(self, idx: int) -> None:
         n = len(self._files)
         if n == 0:
@@ -144,9 +233,10 @@ class SequenceOverlay:
         if current_file == self._last_file:
             return
         self._last_file = current_file
-        self._reader.SetFileName(current_file)
-        self._reader.Modified()
-        self._reader.Update()
+        if not self._read_image(current_file):
+            self._on_read_failure()
+            return
+        self._fail_count = 0
         self._resize.Modified()
         self._resize.Update()
 

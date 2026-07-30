@@ -13,6 +13,13 @@ from configs.settings import (
     SHOW_HIDE_INFO,
     MESH_EXTENSIONS,
     AUDIO_EXTENSIONS, AUDIO_DIR_ROOT, SCREENSHOT_SUBDIR,
+    SAVE_EXT, SAVE_VIDEO_EXTS, SAVE_IMAGE_EXTS,
+    SAVE_QUALITY, SAVE_QUALITY_PRESETS,
+)
+from process.record import check_ffmpeg, is_video_ext, is_image_ext
+from process.load.cache_policy import set_no_normal, set_startup_mode
+from process.plotter.state import (
+    MESH_STARTUP_MODES, PT_STARTUP_MODES, ALL_STARTUP_MODES,
 )
 from configs.logging_cfg import setup_logging
 from configs.colorize import Msg
@@ -36,10 +43,19 @@ def parse_args():
     parser.add_argument('-img', '--images',  type=str, default=None)
     parser.add_argument('-s',   '--save',    type=str, nargs='?',
                         const='', default=None)
+    parser.add_argument('-f',   '--format',  type=str, default=SAVE_EXT,
+                        metavar='EXT')
+    parser.add_argument('-q',   '--quality', type=str, default=SAVE_QUALITY,
+                        choices=tuple(SAVE_QUALITY_PRESETS),
+                        metavar='QUALITY')
+    parser.add_argument('-m',   '--mode',    type=str, default=None,
+                        metavar='MODE')
     parser.add_argument('-c',   '--continuous', action='store_true', default=False)
     parser.add_argument('--no-cache',           action='store_true', default=False)
+    parser.add_argument('--no-normal',          action='store_true', default=False)
     parser.add_argument('--preload-all',        action='store_true', default=False)
     parser.add_argument('--hide-info',          action='store_true', default=SHOW_HIDE_INFO)
+    parser.add_argument('--headless',           action='store_true', default=False)
     parser.add_argument('-v',   '--verbose', action='store_true', default=False)
     parser.add_argument('-r',   '--range',   type=str, default=None,
                         metavar='START-END')
@@ -69,6 +85,39 @@ def parse_args():
     args.frame_start = 0
     args.frame_end   = None
 
+    args.format = args.format.lower().lstrip('.')
+    if not (is_video_ext(args.format) or is_image_ext(args.format)):
+        parser.error(
+            f'--format must be one of '
+            f'{SAVE_VIDEO_EXTS + SAVE_IMAGE_EXTS}: {args.format}'
+        )
+
+    if args.headless:
+        if args.save is None:
+            parser.error('--headless requires -s')
+        if args.continuous:
+            parser.error('--headless cannot be used with -c')
+        args.animation = True
+
+    if args.mode is not None:
+        args.mode = args.mode.strip().lower()
+        if args.mode not in ALL_STARTUP_MODES:
+            parser.error(
+                f'--mode must be one of\n'
+                f'  mesh       : {", ".join(sorted(MESH_STARTUP_MODES))}\n'
+                f'  pointcloud : {", ".join(sorted(PT_STARTUP_MODES))}\n'
+                f'got: {args.mode}'
+            )
+
+    set_startup_mode(args.mode)
+    set_no_normal(args.no_normal)
+    args.quality = args.quality.lower()
+    if is_video_ext(args.format) and not check_ffmpeg():
+        parser.error(
+            f'ffmpeg not found - required for "{args.format}" output. '
+            f'Use "-f png" for image sequence output.'
+        )
+
     if args.range is not None:
         parts = args.range.split('-')
         try:
@@ -95,7 +144,7 @@ def exec_meshViewer(obj_files, args):
     init_vtk()
     buffer = load_files(obj_files, args)
     show_loading()
-    plotter = create_plotter()
+    plotter = create_plotter(args.headless)
     args._file_type = detect_file_type(obj_files[0])
     init_plotter_state(plotter, args)
     apply_input_format(plotter, obj_files[0])
@@ -105,7 +154,7 @@ def exec_meshViewer(obj_files, args):
     register_keys(plotter, buffer.total)
     setup_window(plotter)
     pre_warm_first_frame(plotter, buffer)
-    show_window(plotter)
+    show_window(plotter, args.headless)
     _t_shown = time.perf_counter()
     _log = logging.getLogger(__name__)
     _log.info('Window shown — starting overlay init.')

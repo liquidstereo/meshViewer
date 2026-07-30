@@ -37,12 +37,56 @@ AUDIO_EXTENSIONS = (
 ABC_CONVERT_FORMAT  = 'obj'
 
 # --- Save format ---
+# SAVE_EXT: output extension, overridable with '-f'
+#   'mp4' / 'mov' -> ffmpeg pipe video encoding (process/record)
+#   'png' / 'jpg' -> image sequence
+SAVE_EXT                = 'mp4'
+SAVE_IMAGE_EXTS         = ('png', 'jpg', 'jpeg')
+SAVE_VIDEO_EXTS         = ('mp4', 'mov')
+
 SAVE_FILENAME_DIGITS    = 4
 SAVE_FILENAME_EXT       = 'png'
+SCREENSHOT_EXT          = 'png'  # '`' screenshot is always an image
 SAVE_PNG_COMPRESSION    = 3
 SAVE_JPEG_QUALITY       = 95
 SAVE_PBO_ENABLED        = True
 SCREENSHOT_SUBDIR       = 'screenshot'
+
+# SAVE_ENCODE_WORKERS: parallel workers for image sequence encoding.
+#   cv2.imwrite releases the GIL; video uses a single ffmpeg pipe.
+SAVE_ENCODE_WORKERS     = get_usable_cpu(2, 0.80)
+
+# AVOID_NAME_COLLISION: add '_01', '_02' surfix instead of overwriting
+AVOID_NAME_COLLISION    = True
+# SAVE_MODE_FILENAME: append the active render mode to the filename
+#   night_of_fire.mp4 -> night_of_fire_isoline.mp4
+SAVE_MODE_FILENAME      = True
+
+# --- Video encoding (used when SAVE_EXT is in SAVE_VIDEO_EXTS) ---
+FFMPEG_BIN              = 'ffmpeg'
+SAVE_VIDEO_CODEC        = 'libx264'     # h264
+SAVE_VIDEO_FASTSTART    = True          # mp4 moov atom first (streaming)
+SAVE_VIDEO_LOG_LEVEL    = 'error'       # ffmpeg -loglevel
+
+# SAVE_QUALITY: default for '-q'. One of SAVE_QUALITY_PRESETS.
+#   crf     0=lossless, lower is better (18=visually lossless)
+#   pix_fmt yuv420p=chroma subsampled / yuv444p=no subsampling
+#           thin elements (grid lines, overlay text) blur on yuv420p
+SAVE_QUALITY            = 'high'
+SAVE_QUALITY_PRESETS    = {
+    'low':  {
+        'codec': 'libx264', 'crf': 28,
+        'preset': 'veryfast', 'pix_fmt': 'yuv420p',
+    },
+    'high': {
+        'codec': 'libx264', 'crf': 16,
+        'preset': 'medium', 'pix_fmt': 'yuv444p',
+    },
+    'raw':  {
+        'codec': 'libx264', 'crf': 0,
+        'preset': 'medium', 'pix_fmt': 'yuv444p',
+    },
+}
 
 # --- System resources ---
 DEFAULT_RESERVED_MEMORY_MB  = 2048
@@ -138,6 +182,28 @@ TURNTABLE_STEP          = 1.0
 NORM_SIZE       = 1.0
 MAX_FRAME_SKIP  = 1
 
+# --- Overlay master switches ---
+# False skips actor creation entirely, so the toggle key stays inert.
+# Use SHOW_HIDE_INFO / --hide-info to merely start hidden instead.
+DISPLAY_STATUS      = True  # status text (',' key)
+DISPLAY_SYSINFO     = True  # CPU/MEM/GPU line and its sampler thread
+DISPLAY_MODE        = True  # mode and error messages
+DISPLAY_LOG         = True  # log overlay ('.' key)
+DISPLAY_COLORBAR    = True  # colormap legend
+DISPLAY_HELP        = True  # help overlay ('h' key)
+DISPLAY_SEQUENCE    = True  # image sequence overlay ("'" key)
+DISPLAY_AXES        = True  # orientation axes marker
+
+# --- Overlay font ---
+# The first family installed on the system wins (resolved with fc-match).
+FONT_PRIORITY = (
+    'Ubuntu Sans Mono',
+    'DejaVu Sans Mono',
+    'Noto Sans Mono',
+    'Liberation Mono',
+    'monospace',
+)
+
 # --- Status text (top-left) ---
 UI_STATUS_FONT_SIZE     = _set_fontsize(15)
 UI_STATUS_LINE_SPACING  = 1.10
@@ -157,6 +223,12 @@ UI_LOG_COLOR        = _apply_theme('#686868')
 UI_LOG_ERROR_COLOR  = '#FF0000'
 UI_LOG_PAD_PX       = 10
 UI_LOG_PAD_PY       = 10
+# Overlay-only log format (no name:lineno; the file log keeps its own)
+UI_LOG_FORMAT       = '%(asctime)s | %(levelname)-8s | %(message)s'
+# UI_LOG_MAX_CHARS: 0 = derive from window width and font size
+UI_LOG_MAX_CHARS    = 0
+UI_LOG_MIN_CHARS    = 20
+UI_LOG_ELLIPSIS     = '…'
 
 # --- Mode text (top-right) ---
 UI_MODE_FONT_SIZE   = _set_fontsize(15)

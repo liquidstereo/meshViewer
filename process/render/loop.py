@@ -12,9 +12,8 @@ from configs.system_resources import get_system_info, get_gpu_info
 from configs.settings import (
     TARGET_ANIM_FPS, MAX_FRAME_SKIP,
     UPDATE_INTERVAL, UPDATE_INTERVAL_PLAY,
-    SAVE_FILENAME_DIGITS, SAVE_FILENAME_EXT,
-    SAVE_ALPHA, SAVE_PBO_ENABLED,
-    TURNTABLE_STEP, WORKER_COUNT,
+    SAVE_ALPHA, SAVE_PBO_ENABLED, SAVE_ENCODE_WORKERS,
+    TURNTABLE_STEP,
 )
 import traceback
 
@@ -22,7 +21,9 @@ from process.apply_mode import apply_visual_mode, _active_mode_name
 from process.mode.default import apply_default_reset
 from process.mode.surface import apply_normal
 from process.scene.grid import update_grid_bounds
-from process.window.display import capture_frame, save_frame_to_disk, PBOCapture
+from process.load.frame_integrity import format_broken_message
+from process.window.display import capture_frame, PBOCapture
+from process.render.save_sink import create_sink, format_saved_message
 from process.overlay.hud_texts import (
     update_status_text, update_log_overlay,
     update_mode_text, update_colorbar,
@@ -33,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 _FRAME_INTERVAL = 1.0 / TARGET_ANIM_FPS
 _PERF_LOG_INTERVAL = 10.0
+_HEADLESS_PLAY_MSG = (
+    'EXPORTING SEQUENCE... PLEASE WAIT... (PRESS "Ctrl + C" TO QUIT)'
+)
 
 def _is_cam_dependent_mode(p) -> bool:
     return (
@@ -155,6 +159,21 @@ def _update_seq(plotter, idx):
     if seq is not None:
         seq.update(idx)
 
+def _store_frame(sink, plotter, img, total, t_cap, t_sub) -> int:
+    target = sink.submit(img)
+    plotter._save_counter = sink.count
+    logger.info(
+        'SAVE_FRAME [%d/%d] cap=%.4fs sub=%.4fs out=%s',
+        sink.count, total, t_cap, t_sub, os.path.basename(target),
+    )
+    return sink.count
+
+def _finish_save(sink, count) -> None:
+    sink.close()
+    logger.info(
+        'Save complete: %d frames -> %s', count, sink.target,
+    )
+
 def render_loop(plotter, buffer) -> None:
     frame_count, fps_time = 0, time.time()
     _first_frame_logged = False
@@ -164,16 +183,24 @@ def render_loop(plotter, buffer) -> None:
     t_get = t_mode = t_ui = t_render = 0.0
     save_path = getattr(plotter, '_save_path', None)
     save_loop = getattr(plotter, '_save_loop', False)
-    save_stem = getattr(plotter, '_input_name', 'frame')
+    headless = getattr(plotter, '_headless', False)
     save_counter = 0
     _RECORD_TOTAL = total
     rendered_idx = -1
     _prev_playing = False
     _blink_stop = None
     _blink_thread = None
-    executor = ThreadPoolExecutor(max_workers=WORKER_COUNT)
+    executor = ThreadPoolExecutor(max_workers=SAVE_ENCODE_WORKERS)
+    save_sink = create_sink(plotter, save_path, executor) if save_path else None
+    plotter._save_sink = save_sink
     pbo_capture = None
-    if save_path and SAVE_PBO_ENABLED:
+    if save_path and SAVE_PBO_ENABLED and headless:
+
+        logger.info(
+            'headless: PBO capture disabled'
+            ' - using synchronous capture_frame()',
+        )
+    if save_path and SAVE_PBO_ENABLED and not headless:
         _w, _h = plotter.render_window.GetSize()
         _n_comp = 4 if SAVE_ALPHA else 3
         pbo_capture = PBOCapture(plotter.render_window, _w, _h, _n_comp)
@@ -228,8 +255,10 @@ def render_loop(plotter, buffer) -> None:
 
         anim_fired = False
         skip = 0
+
         if plotter._is_playing and (
-            curr - last_anim_time >= _FRAME_INTERVAL
+            save_path is not None
+            or curr - last_anim_time >= _FRAME_INTERVAL
         ):
             elapsed = curr - last_anim_time
             skip = 0 if save_path else min(
@@ -251,6 +280,10 @@ def render_loop(plotter, buffer) -> None:
             t0 = time.perf_counter()
             mesh, tex = buffer.get(plotter._idx)
             t_get = time.perf_counter() - t0
+            _broken = buffer.broken_source(plotter._idx)
+            if _broken:
+                plotter._error_msg = format_broken_message(_broken)
+                plotter._error_msg_time = curr
             t0 = time.perf_counter()
             if not _first_frame_logged and style_needed:
                 logger.info(
@@ -395,81 +428,48 @@ def render_loop(plotter, buffer) -> None:
                     _perf_get_sum = _perf_mode_sum = _perf_render_sum = 0.0
                     _perf_last_log = _now_perf
             if save_path and anim_fired:
+
+                if pbo_capture is not None and pbo_capture.invalidated:
+                    pbo_capture.destroy()
+                    pbo_capture = None
+                    _pbo_img = None
                 if pbo_capture is not None:
                     _t_sub = time.perf_counter()
                     pbo_capture.submit()
                     _t_sub = time.perf_counter() - _t_sub
                     if _pbo_img is not None:
-                        _fi = save_counter
-                        _fn = os.path.join(
-                            save_path,
-                            f'{save_stem}'
-                            f'.{_fi:0{SAVE_FILENAME_DIGITS}d}'
-                            f'.{SAVE_FILENAME_EXT}',
-                        )
-                        executor.submit(
-                            save_frame_to_disk, _pbo_img, _fn,
-                        )
-                        save_counter += 1
-                        plotter._save_counter = save_counter
-                        logger.info(
-                            'SAVE_FRAME [%d/%d]'
-                            ' cap=%.4fs sub=%.4fs',
-                            save_counter, _RECORD_TOTAL,
-                            _t_cap, _t_sub,
+                        save_counter = _store_frame(
+                            save_sink, plotter, _pbo_img,
+                            _RECORD_TOTAL, _t_cap, _t_sub,
                         )
                         if not save_loop and save_counter >= _RECORD_TOTAL:
-                            _final = pbo_capture.retrieve()
-                            if _final is not None:
-                                _fi = save_counter
-                                _fn = os.path.join(
-                                    save_path,
-                                    f'{save_stem}'
-                                    f'.{_fi:0{SAVE_FILENAME_DIGITS}d}'
-                                    f'.{SAVE_FILENAME_EXT}',
-                                )
-                                executor.submit(
-                                    save_frame_to_disk, _final, _fn,
-                                )
-                                save_counter += 1
-                                plotter._save_counter = save_counter
+
                             pbo_capture.destroy()
                             pbo_capture = None
                             save_path = None
                             plotter._save_path = None
-                            logger.info(
-                                'Screenshot save complete: %d frames.',
-                                save_counter,
-                            )
+                            _finish_save(save_sink, save_counter)
                 else:
                     _t_cap = time.perf_counter()
                     img = capture_frame(plotter)
                     _t_cap = time.perf_counter() - _t_cap
-                    _fi = save_counter
-                    _fn = os.path.join(
-                        save_path,
-                        f'{save_stem}'
-                        f'.{_fi:0{SAVE_FILENAME_DIGITS}d}'
-                        f'.{SAVE_FILENAME_EXT}',
-                    )
                     _t_sub = time.perf_counter()
-                    executor.submit(save_frame_to_disk, img, _fn)
-                    _t_sub = time.perf_counter() - _t_sub
-                    save_counter += 1
-                    plotter._save_counter = save_counter
-                    logger.info(
-                        'SAVE_FRAME [%d/%d]'
-                        ' cap=%.4fs sub=%.4fs fname=%s',
-                        save_counter, _RECORD_TOTAL,
-                        _t_cap, _t_sub, os.path.basename(_fn),
+                    save_counter = _store_frame(
+                        save_sink, plotter, img,
+                        _RECORD_TOTAL, _t_cap, 0.0,
                     )
+                    _t_sub = time.perf_counter() - _t_sub
                     if not save_loop and save_counter >= _RECORD_TOTAL:
                         save_path = None
                         plotter._save_path = None
-                        logger.info(
-                            'Screenshot save complete: %d frames.',
-                            save_counter,
-                        )
+                        _finish_save(save_sink, save_counter)
+
+            if headless and save_sink is not None and save_path is None:
+                logger.info(
+                    'headless: save finished (%d frames) - exiting loop',
+                    save_counter,
+                )
+                break
 
         ui_interval = (
             UPDATE_INTERVAL_PLAY
@@ -478,7 +478,8 @@ def render_loop(plotter, buffer) -> None:
         )
         if curr - last_update_time >= ui_interval:
             t0 = time.perf_counter()
-            if plotter.iren is not None:
+
+            if not headless and plotter.iren is not None:
                 plotter.iren.process_events()
             last_update_time = curr
             t_update = time.perf_counter() - t0
@@ -495,7 +496,10 @@ def render_loop(plotter, buffer) -> None:
                 _blink_stop = threading.Event()
                 _blink_thread = threading.Thread(
                     target=_playing_monitor,
-                    args=(_blink_stop,),
+                    args=(
+                        _blink_stop,
+                        _HEADLESS_PLAY_MSG if headless else None,
+                    ),
                     daemon=True,
                 )
                 _blink_thread.start()
@@ -512,7 +516,10 @@ def render_loop(plotter, buffer) -> None:
                 plotter._blink_thread_ref = None
             _prev_playing = is_playing
 
-        if plotter._is_playing:
+        if save_path is not None and plotter._is_playing:
+
+            time.sleep(0.0002)
+        elif plotter._is_playing:
             _nxt = last_anim_time + _FRAME_INTERVAL
             _remain = _nxt - time.time() - 0.001
             if _remain > 0.002:
@@ -532,4 +539,13 @@ def render_loop(plotter, buffer) -> None:
     if pbo_capture is not None:
         pbo_capture.destroy()
     executor.shutdown(wait=True)
+    if save_sink is not None:
+        save_sink.close()
+
+        if headless and save_sink.count > 0:
+            Msg.Dim(
+                format_saved_message(
+                    save_sink.count, save_sink.display_target,
+                )
+            )
     logger.debug('render_loop ended')

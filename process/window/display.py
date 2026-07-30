@@ -85,13 +85,36 @@ class PBOCapture:
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0)
         self._submit_idx = 0
         self._pending: int | None = None
+        self.invalidated = False
+
+    def _buffers_alive(self) -> bool:
+        from OpenGL.GL import glIsBuffer
+        if not self._pbos:
+            return False
+        try:
+            return all(bool(glIsBuffer(pbo)) for pbo in self._pbos)
+        except Exception:
+            return False
+
+    def _mark_invalid(self, reason: str) -> None:
+        logger.error(
+            'PBO capture invalidated (%s) - falling back to'
+            ' synchronous capture.', reason,
+        )
+        self.invalidated = True
+        self._pending = None
 
     def submit(self) -> None:
         from OpenGL.GL import (
             glBindBuffer, glReadPixels,
             GL_PIXEL_PACK_BUFFER, GL_RGB, GL_RGBA, GL_UNSIGNED_BYTE,
         )
+        if self.invalidated:
+            return
         self._rw.MakeCurrent()
+        if not self._buffers_alive():
+            self._mark_invalid('buffer handles no longer valid')
+            return
         pbo = self._pbos[self._submit_idx]
         gl_fmt = GL_RGBA if self._n_comp == 4 else GL_RGB
         glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo)
@@ -103,7 +126,7 @@ class PBOCapture:
         self._submit_idx ^= 1
 
     def retrieve(self) -> np.ndarray | None:
-        if self._pending is None:
+        if self._pending is None or self.invalidated:
             return None
         import ctypes
         from OpenGL.GL import (
@@ -111,6 +134,9 @@ class PBOCapture:
             GL_PIXEL_PACK_BUFFER, GL_READ_ONLY,
         )
         self._rw.MakeCurrent()
+        if not self._buffers_alive():
+            self._mark_invalid('buffer handles no longer valid')
+            return None
         glBindBuffer(GL_PIXEL_PACK_BUFFER, self._pending)
         ptr = glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY)
         if isinstance(ptr, int):

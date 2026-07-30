@@ -30,6 +30,7 @@ class AudioContext:
     tab_state:    int   = 0
     monitor_ctx:  list  = field(default_factory=lambda: [None, None])
     executor:     object = None
+    sink:         object = None
 
 def init_audio_state(
     plotter,

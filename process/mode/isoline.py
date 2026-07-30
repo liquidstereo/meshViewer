@@ -1,10 +1,9 @@
 import logging
 import numpy as np
-import pyvista as pv
-import vtk
 
 from configs.settings import (
     COLOR_BG, WIDTH_ISO_LINE, TYPE_TUBE, ISO_NORMAL_OFFSET,
+    ISOLINE_CONTOUR_MAX_FACES, ISOLINE_DECIMATE_SEQUENCE,
 )
 from process.mode.common import (
     _hex_to_rgb, _resolve_color, _set_mesh_input,
@@ -20,18 +19,57 @@ def _get_cam_dir(p) -> np.ndarray:
     d = np.array(cam.GetDirectionOfProjection())
     return d / (np.linalg.norm(d) + 1e-12)
 
+def _use_decimation(p) -> bool:
+    if ISOLINE_DECIMATE_SEQUENCE:
+        return True
+    return getattr(p, '_total', 1) <= 1
+
 def _get_iso_display(p, mesh):
-    if getattr(p, '_cached_iso_mesh', None) is mesh:
+    if getattr(p, '_cached_iso_display_src', None) is mesh:
         return p._cached_iso_display
 
-    from configs.settings import REDUCTION_MESH
-    display = mesh.copy(deep=True)
-    if REDUCTION_MESH < 1.0:
-        display = display.decimate(1.0 - REDUCTION_MESH)
+    p._cached_iso_count = -1
+    p._cached_iso_axis = -1
+    p._cached_iso_cam_dir = None
 
-    p._cached_iso_mesh = mesh
+    display = mesh.copy()
+    n_faces = display.n_faces_strict
+    if n_faces > ISOLINE_CONTOUR_MAX_FACES and not _use_decimation(p):
+        if not getattr(p, '_iso_decimate_logged', False):
+            p._iso_decimate_logged = True
+            logger.info(
+                'Isoline decimation skipped for sequence'
+                ' (%d faces, %d frames): per-frame decimation costs'
+                ' more than contouring the original mesh.',
+                n_faces, getattr(p, '_total', 1),
+            )
+    elif n_faces > ISOLINE_CONTOUR_MAX_FACES:
+        ratio = max(0.0, 1.0 - ISOLINE_CONTOUR_MAX_FACES / n_faces)
+        if not display.is_all_triangles:
+            display = display.triangulate()
+        display = display.decimate(ratio)
+
+        if 'Normals' in display.point_data:
+            del display.point_data['Normals']
+        logger.debug(
+            'Isoline display decimated: %d -> %d faces (ratio=%.3f)',
+            n_faces, display.n_faces_strict, ratio,
+        )
+
+    p._cached_iso_display_src = mesh
     p._cached_iso_display = display
     return display
+
+def _resolve_contour_normals(display, contours):
+    normals = contours.point_data.get('Normals')
+    if normals is not None and normals.shape[0] == contours.n_points:
+        return normals
+
+    display_n = display.compute_normals(
+        cell_normals=False, point_normals=True, progress_bar=False,
+    )
+    sampled = contours.sample(display_n, progress_bar=False)
+    return sampled.point_data.get('Normals')
 
 def _set_flat_line_lighting(prop):
     prop.SetLighting(False)
@@ -81,18 +119,9 @@ def apply_isoline(p, mesh):
     contours = display.contour(isosurfaces=iso_count)
 
     if ISO_NORMAL_OFFSET != 0 and contours.n_points > 0:
-        if 'Normals' not in display.point_data:
-            display.compute_normals(inplace=True)
-        _probe = vtk.vtkProbeFilter()
-        _probe.SetSourceData(display)
-        _probe.SetInputData(contours)
-        _probe.Update()
-        _probed = pv.wrap(_probe.GetOutput())
-        if 'Normals' in _probed.point_data:
-            contours = _probed
-            contours.points += (
-                contours.point_data['Normals'] * ISO_NORMAL_OFFSET
-            )
+        normals = _resolve_contour_normals(display, contours)
+        if normals is not None and normals.shape[0] == contours.n_points:
+            contours.points = contours.points + normals * ISO_NORMAL_OFFSET
 
     p._iso_mapper.SetInputData(contours)
     p._iso_mapper.SetLookupTable(p._iso_lut)

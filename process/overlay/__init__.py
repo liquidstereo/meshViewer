@@ -12,6 +12,10 @@ from process.overlay.hud_texts import (
     init_overlay_text, update_overlay_text,
 )
 from process.overlay.sequence import init_sequence_overlay, load_seq_files
+from configs.settings import (
+    DISPLAY_STATUS, DISPLAY_SYSINFO, DISPLAY_MODE, DISPLAY_LOG,
+    DISPLAY_COLORBAR, DISPLAY_HELP,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +50,26 @@ def _init_hud_renderer(plotter) -> None:
 
 def init_overlays(plotter) -> None:
     plotter.render_window.SetNumberOfLayers(_TOTAL_LAYERS)
-    init_status_text(plotter)
-    init_sysinfo_monitor(plotter)
+
+    if DISPLAY_STATUS:
+        init_status_text(plotter)
+    if DISPLAY_SYSINFO:
+        init_sysinfo_monitor(plotter)
     _init_hud_renderer(plotter)
-    init_mode_text(plotter)
-    init_log_overlay(plotter)
-    init_colorbar(plotter)
-    init_help_overlay(plotter)
-    logger.debug('init_overlays: all overlays initialized')
+    if DISPLAY_MODE:
+        init_mode_text(plotter)
+    if DISPLAY_LOG:
+        init_log_overlay(plotter)
+    if DISPLAY_COLORBAR:
+        init_colorbar(plotter)
+    if DISPLAY_HELP:
+        init_help_overlay(plotter)
+    logger.info(
+        'init_overlays: status=%s sysinfo=%s mode=%s log=%s'
+        ' colorbar=%s help=%s',
+        DISPLAY_STATUS, DISPLAY_SYSINFO, DISPLAY_MODE, DISPLAY_LOG,
+        DISPLAY_COLORBAR, DISPLAY_HELP,
+    )
 
 __all__ = [
     'init_status_text', 'update_status_text',

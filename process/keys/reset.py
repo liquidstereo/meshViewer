@@ -3,6 +3,9 @@ import logging
 import numpy as np
 
 from configs.colorize import Msg
+from configs.logging_cfg import (
+    error_log_path, error_count, finalize_error_log,
+)
 from configs.settings import (
     LOG_DIR,
     SHOW_ANIMATION, SHOW_BACKFACE, SHOW_BBOX,
@@ -10,7 +13,7 @@ from configs.settings import (
     SHOW_TURNTABLE,
     ISO_COUNT_DEFAULT, REDUCTION_MESH,
     EDGE_FEATURE_ANGLE, VTX_SPATIAL_INTERVAL,
-    OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR, SAVE_FILENAME_EXT,
+    OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR, SCREENSHOT_EXT,
     CAM_ZOOM_STEP, CAM_TRUCK_STEP,
 )
 import configs.theme as _theme_mod
@@ -47,6 +50,7 @@ from process.mode.labels import (
 from process.init.session_log import log_session_end, _SETTINGS_LOG_FILENAME
 from process.scene.grid import setup_grid
 from process.window.display import save_screenshot
+from process.render.save_sink import format_saved_message
 from process.mode.default import apply_default_reset
 from process.scene.lighting import apply_lighting
 from process.window.toggle_info import toggle_info_overlay
@@ -375,7 +379,7 @@ def register(p, trigger, set_mode, total_len):
         scr_dir = os.path.join(OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR)
         os.makedirs(scr_dir, exist_ok=True)
         path = os.path.join(
-            scr_dir, f'{name}_screenshot.{SAVE_FILENAME_EXT}'
+            scr_dir, f'{name}_screenshot.{SCREENSHOT_EXT}'
         )
         try:
             save_screenshot(p, path)
@@ -563,6 +567,14 @@ def register(p, trigger, set_mode, total_len):
             if blink_thread is not None:
                 blink_thread.join(timeout=2.0)
 
+        save_sink = getattr(p, '_save_sink', None)
+        sink_target = (
+            save_sink.display_target if save_sink is not None else None
+        )
+        if save_sink is not None:
+            save_sink.close()
+            p._save_sink = None
+
         input_name = getattr(p, '_input_name', '?')
         total = getattr(p, '_total', 0)
         log_path = os.path.join(LOG_DIR, f'{input_name}.log')
@@ -571,6 +583,7 @@ def register(p, trigger, set_mode, total_len):
         save_path_val = getattr(p, '_save_path', None)
         log_session_end(input_name, total, start_t, save_counter, save_path_val)
         logging.shutdown()
+        finalize_error_log(input_name)
 
         result_count_surfix = ''
         if total > 1 :
@@ -579,13 +592,16 @@ def register(p, trigger, set_mode, total_len):
             f'Mesh playback for "{input_name}" finished.{result_count_surfix}',
             divide=False
         )
-        save_counter = getattr(p, '_save_counter', 0)
-        save_path = getattr(p, '_save_path', None)
-        if save_path and save_counter > 0:
-            rel_path = os.path.relpath(save_path)
-            Msg.Dim(
-                f'Saved {save_counter} captured images to "{rel_path}".'
+        err_count = error_count()
+        if err_count > 0:
+            Msg.Error(
+                f'{err_count} Error Found. Please Refer To The'
+                f' Log File For Details({error_log_path(input_name)})', divide=False
             )
+
+        save_counter = getattr(p, '_save_counter', 0)
+        if sink_target and save_counter > 0:
+            Msg.Dim(format_saved_message(save_counter, sink_target))
         save_dir = getattr(p, '_save_dir', None)
         if save_dir:
             _settings_log = os.path.join(

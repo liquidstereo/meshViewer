@@ -6,63 +6,43 @@ An interactive 3D mesh viewer built on OpenGL with support for static meshes, fr
 
 ## Updates
 
-### New Feature
+### Latest
 
-- **NumPy array (`.npy` / `.npz`) file playback support** — Single-file and
-  sequence-directory loading is supported. Array shapes are handled automatically:
-  `(N, 3)` → XYZ point cloud, `(N, 6)` → XYZ+RGB point cloud, `(H, W)` → depth map
-  rendered as a point cloud or surface mesh (toggle via `NPY_AS_POINTCLOUD` in
-  `configs/settings_np_data.py`; default: point cloud).
-  No cache is built — files are read directly on every load.
-
-- **NPZ/NPY depth map normalization** — Four constants in
-  `configs/settings_np_data.py` control depth distribution for sequences with
-  heavily skewed Z ranges (e.g., city-scale depth scans).
-  `DATA_NORMALIZE = True` enables normalization globally;
-  `DATA_NORMALIZE_VALUE` sets the target scale (default: `10.0`);
-  `DATA_NORMALIZE_LOG = True` applies a log1p transform on Z before normalization;
-  `DATA_NORMALIZE_AXIS = 'per_axis'` normalizes each axis independently.
-  Requires `--no-cache` rebuild after changing any of these values.
-
-- **Per-type axis and flip settings** — `STARTUP_AXIS`, `STARTUP_REVERSE_*_AXIS`,
-  and `FLIP_OBJECT_*` can now be overridden independently per input type via
-  prefixed constants in each settings file (`MESH_STARTUP_AXIS`,
-  `PT_STARTUP_AXIS`, `NP_STARTUP_AXIS`, `AUDIO_STARTUP_AXIS`, etc.).
-  Set to `None` (default) to fall back to the shared value in `configs/settings.py`.
-
-### Fix
-
-- **GPU shader segfault on WSL2 prevented** — The depth-mode GPU shader
-  (`SetFragmentShaderCode` with a 256-entry GLSL vec3 array) caused a Mesa/D3D12
-  driver SEGFAULT during GPU compilation on WSL2. `_IS_WSL2` is now detected at
-  startup; when true, the GPU shader is skipped and the CPU depth-coloring path is
-  used instead. `faulthandler` is connected to the log file so C++ crashes produce
-  a traceable stack.
-
-### Feature
-
-- **HDRI IBL result cached** — The first `4`-key (Smooth) activation precomputes
-  IBL and stores it in `_hdri_ibl_cached`. Subsequent toggles call
-  `UseImageBasedLightingOn/Off` only, avoiding repeated HDRI precomputation and
-  reducing mode-switch latency.
+- **Headless export** - `--headless` renders offscreen and exits once the
+  save completes. Requires `-s`, rejects `-c`. Capture is synchronous:
+  offscreen rendering targets VTK's own framebuffer, where PBO readback
+  returns blank frames.
+- **Video recording** - `-s` writes an h264 mp4 by default. `-f` selects
+  mp4/mov/png/jpg, `-q` selects low/high/raw. No frame is dropped while
+  saving; `SAVE_MODE_FILENAME` appends the render mode to the filename.
+- **Per-overlay switches** - `DISPLAY_*` in `configs/settings_overlay.py`.
+  `False` skips actor creation, so the matching toggle key stays inert.
+- **Startup render mode** - `-m` overrides the settings file per input
+  type. `STARTUP_MODE` is the single source of truth at launch.
+- **NumPy playback** - `.npy` / `.npz` single files and sequences.
+  `(N, 3)`, `(N, 6)` and `(H, W)` shapes are detected automatically;
+  `DATA_NORMALIZE*` rescales skewed depth ranges.
+- **Optional point normals** - `--no-normal` (or `CACHE_NORMALS`) shrinks
+  the cache by roughly 20 percent when no normal-based mode is used.
+- **Configurable overlay font** - `FONT_PRIORITY` picks the first family
+  installed; overlay text scales with the window.
+- **Per-type axis and flip settings** - `MESH_*`, `PT_*`, `NP_*` and
+  `AUDIO_*` prefixed overrides fall back to the shared value.
 
 ### Performance
 
-- **GS PLY sequence cache build speed improved ~2.4×** — VTK's C++ PLY reader is
-  bypassed in favor of a pure-Python parser (`plyfile`), eliminating a random worker
-  hang with large Gaussian Splat PLY files (62-property, ~47 MB per frame) and
-  reducing cache build time from ~4 min to ~1 min 35 sec (1,341-frame benchmark).
+| Change | Result |
+|---|---|
+| Cached point normals | preload 212 s to 48 s (1,750 frames) |
+| Decimation skip + float32 cache | load ~19 min to ~1 min 10 s (25 GB OBJ) |
+| Subsample-aware NPZ preload | per-frame 131 ms to 5 ms (~25 FPS) |
+| Contour normal propagation | isoline 288 ms to 153 ms per frame |
+| Direct interactor event handling | ~33% higher steady-state FPS |
+| Pure-Python PLY parser | GS PLY cache build ~4 min to ~1 min 35 s |
+| Cached HDRI IBL | no recompute when toggling Smooth mode |
 
-- **Render loop optimized** — Internal `plotter.update()` call replaced with
-  `plotter.iren.process_events()`, removing a redundant conditional render per
-  frame and improving steady-state FPS by ~33%.
-
-- **NPZ sequence playback speed improved ~27×** — Preload memory estimate now
-  accounts for subsampling (`PT_SUBSAMPLE_THRESHOLD`), correctly enabling
-  full preload instead of falling back to sliding-window mode. NPZ sequences
-  also use parallel executor loading (4 workers) instead of single-threaded,
-  reducing preload time from ~3 min to ~45 sec. Average per-frame mode time
-  drops from ~131 ms to ~5 ms (1,545-frame benchmark).
+Corrupted or truncated source frames no longer flicker: they are marked
+with `build_failed.marker` and held at the nearest valid frame.
 
 ---
 
@@ -92,6 +72,9 @@ MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio vis
 
 - [Python 3.10+](https://www.python.org/downloads/)
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html) (required — VTK must be installed via conda-forge, not pip)
+- **Linux is strongly recommended.** MeshViewer is built and tested on
+  Linux. Other platforms are untested, and the OpenGL/VTK paths in
+  particular are known to behave differently.
 
 ---
 
@@ -127,7 +110,7 @@ MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio vis
 Execute the script from the project root directory using the following syntax:
 
 ```bash
-python meshViewer.py -i <input> [-img <images>] [-s [<save>]] [-c] [-r <START-END>] [-v] [--no-cache] [--hide-info]
+python meshViewer.py -i <input> [-img <images>] [-s [<save>]] [-f <ext>] [-q <quality>] [-m <mode>] [-c] [-r <START-END>] [-v] [--no-cache] [--no-normal] [--preload-all] [--hide-info] [--headless]
 ```
 
 ### Usage Examples
@@ -152,17 +135,36 @@ python meshViewer.py -i input/audio/track.wav
 
 #### Frame Range & Capture
 ```bash
-# Play frames 100–400 only
+# Play frames 100-400 only
 python meshViewer.py -i character -r 100-400
 
-# Save screenshots continuously during looped playback
+# Record an h264 mp4 (default format, 'high' quality)
+python meshViewer.py -i character -s
+
+# Record a lossless mp4
+python meshViewer.py -i character -s -q raw
+
+# Save a PNG image sequence instead of a video
+python meshViewer.py -i character -s -f png
+
+# Accumulate captures across looped playback
 python meshViewer.py -i character -s -c
+
+# Export without opening a window; exits when the range is written
+python meshViewer.py -i character -s -r 0-300 --headless
 ```
 
 #### Other Options
 ```bash
 # Start with all overlays hidden and enable debug logging
 python meshViewer.py -i character --hide-info -v
+
+# Start directly in a specific render mode
+python meshViewer.py -i character -m isoline
+python meshViewer.py -i pointcloud_seq -m point_white
+
+# Build the cache without point normals (smaller cache)
+python meshViewer.py -i character --no-normal
 ```
 
 ### Command-Line Arguments
@@ -171,12 +173,24 @@ python meshViewer.py -i character --hide-info -v
 |-----|-----------|-------------|---------|
 | `-i` | `--input` | **(required)** Mesh/audio directory name or file path | — |
 | `-img` | `--images` | Image sequence overlay directory | `input/sequence/<name>` |
-| `-s` | `--save` | Screenshot save path (omit value → `output/<name>/` auto-set) | `None` |
-| `-c` | `--continuous` | Accumulate screenshot index across loops (use with `-s`) | `False` |
+| `-s` | `--save` | Capture save path (omit value → `output/<name>` auto-set) | `None` |
+| `-f` | `--format` | Output format: `mp4`, `mov`, `png`, `jpg` | `SAVE_EXT` (`mp4`) |
+| `-q` | `--quality` | Video quality: `low`, `high`, `raw` (video only) | `SAVE_QUALITY` (`high`) |
+| `-m` | `--mode` | Startup render mode; overrides the settings file | `STARTUP_MODE` |
+| `-c` | `--continuous` | Accumulate capture index across loops (use with `-s`) | `False` |
 | `-r` | `--range` | Playback frame range `START-END` (e.g. `0-500`) | `None` |
 | `-v` | `--verbose` | Set log level to DEBUG | `False` |
 | — | `--no-cache` | Skip NPZ/VTP cache; reload source files directly | `False` |
+| — | `--no-normal` | Skip point normal generation (smaller cache; slower for normal-based modes) | `False` |
+| — | `--preload-all` | Force full preload into RAM (OR-ed with `DEFAULT_PRELOAD_ALL`) | `False` |
 | — | `--hide-info` | Hide all overlays on startup (`/` key to toggle) | `False` |
+| — | `--headless` | Render offscreen and exit when saving finishes (requires `-s`, rejects `-c`) | `False` |
+
+`-m` accepts, for meshes: `default`, `wire`, `smooth`, `isoline`,
+`normal_color`, `mesh_quality`, `face_normal`, `depth`, `edge`, `vtx`,
+`pbr_tex.tex`, `pbr_tex.pbr`, `pbr_tex`; for point clouds: `point_rgb`,
+`point_white`, `depth`. A mode that does not apply to the loaded input is
+ignored with a warning.
 
 ## Input Directory Structure
 
@@ -237,14 +251,16 @@ Input-type-specific settings are in `configs/settings_mesh.py`,
 `configs/settings_point_cloud.py`, `configs/settings_np_data.py`, and
 `configs/settings_audio.py`.
 
+The tables below are generated from the shipped settings files at build time.
+
 **Window**
 
 | Setting | Default |
 |---|---|
 | Width × Height | 1024 × 1024 |
-| Aspect ratio | 1.0 (square) |
+| Aspect ratio | 1.0 |
 | MSAA samples | 8 |
-| FXAA | disabled |
+| FXAA | off |
 | Monitor index | 0 |
 
 **Playback**
@@ -252,11 +268,11 @@ Input-type-specific settings are in `configs/settings_mesh.py`,
 | Setting | Default |
 |---|---|
 | Startup render mode | `default` |
-| Animation | enabled |
+| Animation | on |
 | Target FPS | 30 |
-| Frame buffer size | ≥ 1500 frames (RAM-dependent) |
+| Frame buffer size | RAM-dependent |
 | Preload ahead | 87.5% of frame buffer size |
-| Preload all | enabled |
+| Preload all | on |
 
 **Scene**
 
@@ -268,7 +284,27 @@ Input-type-specific settings are in `configs/settings_mesh.py`,
 | Additional lighting | off |
 | Turntable auto-rotation | on |
 | Colorbar | on |
-| HDRI IBL | enabled |
+| HDRI IBL | off |
+
+**Overlays**
+
+Every overlay has its own master switch in `configs/settings_overlay.py`.
+Setting one to `False` skips actor creation entirely, so the matching toggle
+key stays inert.
+
+| Setting | Overlay | Toggle key |
+|---|---|---|
+| `DISPLAY_STATUS` | Status text (top left) | `,` |
+| `DISPLAY_SYSINFO` | CPU / MEM / GPU line and its sampler thread | — |
+| `DISPLAY_MODE` | Mode and error messages | — |
+| `DISPLAY_LOG` | Log overlay (bottom left) | `.` |
+| `DISPLAY_COLORBAR` | Colormap legend | — |
+| `DISPLAY_HELP` | Help overlay | `h` |
+| `DISPLAY_SEQUENCE` | Image sequence overlay | `'` |
+| `DISPLAY_AXES` | Orientation axes marker | — |
+
+Use `--hide-info` (or `SHOW_HIDE_INFO`) instead when the overlays should
+merely start hidden and stay toggleable with `/`.
 
 ---
 
@@ -377,6 +413,56 @@ In `configs/settings.py`:
 ```python
 DEFAULT_SYSTEM_USAGE = 0.50  # default: 0.80; recommended 0.50-0.60 on low-end CPUs
 ```
+
+### Slow Mesh Sequence Preload
+
+Automatic decimation runs per frame and dominates preload time on dense
+sequences. It is skipped when the mesh is already close to the target
+cell count.
+
+In `configs/settings_mesh.py`:
+```python
+AUTO_DECIMATE_MIN_GAIN_RATIO = 0.5  # skip if n_faces <= MAX_CELLS * 1.5
+CACHE_POINTS_FLOAT32 = True         # cache points as float32 (half size)
+```
+
+Raising `AUTO_DECIMATE_MIN_GAIN_RATIO` skips decimation for larger meshes
+(faster load, higher GPU load). Changing `CACHE_POINTS_FLOAT32` requires
+deleting `input/cache/` to take effect, since cache staleness is based on
+file mtime.
+
+### Some Frames Disappear or Flicker During Playback
+
+Empty (0-byte) or truncated source files cannot be read by VTK. Such
+frames are marked with `build_failed.marker` inside their cache directory
+and are held at the nearest valid frame instead of rendering nothing.
+
+Check the log for the affected frame count:
+```
+WARNING  Invalid frames held from nearest valid frame: N frames
+```
+
+Re-export the listed source files to restore them. To disable holding and
+show empty frames instead, set `HOLD_INVALID_FRAME = False` in
+`configs/settings_mesh.py`.
+
+### Recorded File Size Varies Wildly Between Render Modes
+
+This is expected. h264 is encoded at constant quality (CRF), so the bitrate
+follows scene complexity rather than a fixed budget. `wire` and `edge` fill the
+frame with thin high-contrast lines that defeat both spatial and temporal
+prediction, while `depth` is a smooth gradient that compresses well - the same
+sequence can differ by an order of magnitude.
+
+The `high` default (`crf 16`, `yuv444p`) deliberately spends bits to keep thin
+lines and overlay text sharp. For smaller files:
+
+```bash
+python meshViewer.py -i <name> -s -q low     # crf 28 + yuv420p
+```
+
+Or add an intermediate preset to `SAVE_QUALITY_PRESETS` in
+`configs/settings.py`, or reduce `WINDOW_WIDTH` / `WINDOW_HEIGHT`.
 
 ### Cache Corruption or Stale Mesh Data
 

@@ -19,7 +19,7 @@ from configs.settings import (
     SHOW_GRID, AUDIO_ISO_AXIS, AUDIO_COLOR_AXIS,
     AUDIO_ISO_COUNT_DEFAULT, STARTUP_AUDIO_MODE,
     STARTUP_CAM_DEGREE, STARTUP_CAM_POSITION, CAM_TRUCK_STEP,
-    SAVE_PBO_ENABLED,
+    SAVE_PBO_ENABLED, DISPLAY_SEQUENCE,
 )
 from configs.colorize import Msg
 from process.init import init_vtk, log_session_start  # noqa: F401
@@ -66,9 +66,9 @@ def load_files(obj_files: list, args) -> FrameBuffer:
         logger.info('Save output dir: %s', args.save)
     return buffer
 
-def create_plotter() -> Plotter:
+def create_plotter(off_screen: bool = False) -> Plotter:
     t = time.perf_counter()
-    plotter = build_plotter()
+    plotter = build_plotter(off_screen)
     logger.debug('Plotter init: %.4fs', time.perf_counter() - t)
     return plotter
 
@@ -157,7 +157,8 @@ def setup_window(plotter) -> None:
     setup_hdri(plotter)
     if getattr(plotter, '_is_smooth', False):
         enable_hdri(plotter)
-    if getattr(plotter, '_save_path', None) and SAVE_PBO_ENABLED:
+    if (getattr(plotter, '_save_path', None) and SAVE_PBO_ENABLED
+            and not getattr(plotter, '_headless', False)):
         plotter.render_window.SetMultiSamples(0)
         logger.debug('setup_window: MSAA disabled for PBO capture')
     hide_loading()
@@ -172,16 +173,58 @@ def pre_warm_first_frame(plotter, buffer) -> None:
     finally:
         plotter._needs_update = True
 
-def show_window(plotter) -> None:
+_SOFTWARE_RENDERERS = ('llvmpipe', 'softpipe', 'swrast')
+
+def parse_gl_caps(caps: str) -> tuple[str, str, bool]:
+    vendor = renderer = ''
+    for line in caps.splitlines():
+        key, _, value = line.partition(':')
+        name = key.strip()
+        if name == 'OpenGL vendor string':
+            vendor = value.strip()
+        elif name == 'OpenGL renderer string':
+            renderer = value.strip()
+    accelerated = bool(renderer) and not any(
+        s in renderer.lower() for s in _SOFTWARE_RENDERERS
+    )
+    return vendor, renderer, accelerated
+
+def _log_gl_renderer(plotter) -> None:
+    vendor, renderer, accelerated = parse_gl_caps(
+        plotter.render_window.ReportCapabilities()
+    )
+    logger.info(
+        'GL renderer: %s | vendor: %s | accelerated: %s'
+        ' | GALLIUM_DRIVER=%s',
+        renderer or 'unknown', vendor or 'unknown',
+        accelerated, os.environ.get('GALLIUM_DRIVER', '<unset>'),
+    )
+    if not accelerated:
+        logger.warning(
+            'Software rasterizer in use - GPU is idle.'
+            ' Set GALLIUM_DRIVER=d3d12 for hardware acceleration.'
+        )
+
+def show_window(plotter, headless: bool = False) -> None:
+
     t = time.perf_counter()
-    center_window(plotter, WINDOW_MONITOR_INDEX)
+    if not headless:
+        center_window(plotter, WINDOW_MONITOR_INDEX)
     plotter.show(interactive_update=True)
+    _log_gl_renderer(plotter)
     if RENDER_FXAA and RENDER_MSAA_SAMPLES == 0:
         plotter.renderer.SetUseFXAA(True)
-    apply_key_filter_style(plotter)
-    logger.info('show_window: %.3fs', time.perf_counter() - t)
+    if not headless:
+        apply_key_filter_style(plotter)
+    logger.info(
+        'show_window: %.3fs headless=%s',
+        time.perf_counter() - t, headless,
+    )
 
 def load_seq_overlay(plotter, args, total: int) -> None:
+    if not DISPLAY_SEQUENCE:
+        logger.debug('load_seq_overlay: disabled by DISPLAY_SEQUENCE')
+        return
     seq_files = load_seq_files(args, total)
     if not seq_files:
         return

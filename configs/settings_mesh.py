@@ -1,13 +1,8 @@
-from configs.theme import (
-    apply_theme as _apply_theme,
-    make_fontsize_fn as _make_fontsize_fn,
-)
-
-_font_scale   = 1.0
-_set_fontsize = _make_fontsize_fn(_font_scale)
+from configs.theme import apply_theme as _apply_theme
+from configs.settings_font import _set_fontsize
 
 HDRI_PATH   = './assets/hdri/pav_studio_03_4k.hdr'
-HDRI_ENABLE = True
+HDRI_ENABLE = False
 
 COLOR_MESH_DEFAULT  = _apply_theme('#FFFFFF')
 COLOR_MESH_ISO      = _apply_theme('#FFFC55')
@@ -19,10 +14,12 @@ PBR_ANISOTROPY  = 0.1
 HDRI_INTENSITY  = 0.75
 HDRI_ROT_STEP   = 5.0
 
-STARTUP_MODE    = 'pbr_tex.tex'
+STARTUP_MODE    = 'default'
 
 DEFAULT_TEXTURE = False
-DEFAULT_SMOOTH  = False
+DEFAULT_SMOOTH  = True
+
+CACHE_NORMALS   = 'auto'
 
 REDUCTION_MESH         = 1.0
 REDUCTION_MESH_STEP    = 0.05
@@ -32,7 +29,16 @@ AUTO_DECIMATE_THRESHOLD = 100_000
 AUTO_DECIMATE_MAX_CELLS = 200_000
 AUTO_DECIMATE_MAX_RATIO = 0.1
 
+AUTO_DECIMATE_MIN_GAIN_RATIO = 0.5
+
+CACHE_POINTS_FLOAT32 = True
+
+SKIP_INVALID_FRAMES = False
+
+HOLD_INVALID_FRAME = True
+
 ISOLINE_CONTOUR_MAX_FACES = 50_000
+ISOLINE_DECIMATE_SEQUENCE = False
 
 OFFSET_MESH_BACK    = (0.0, 8.0)
 

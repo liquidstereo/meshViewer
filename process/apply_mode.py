@@ -19,6 +19,8 @@ from configs.settings import (
     NP_CLOUD_SIZE_DEPTH,
     NP_POINT_FOG,
 )
+from process.load.cache_policy import startup_mode_override
+from process.plotter.state import PT_STARTUP_MODES
 from process.mode.surface import apply_normal
 from process.mode.default import apply_default_reset
 from process.mode.isoline import (
@@ -81,6 +83,7 @@ def apply_point_cloud_startup(p) -> None:
     p._is_tex = False
 
     _is_np = getattr(p, '_is_np_data', False)
+    _override = startup_mode_override()
     if _is_np:
         mode       = NP_STARTUP_MODE_POINT_CLOUD
         _sz_rgb    = NP_CLOUD_SIZE_DEFAULT
@@ -94,6 +97,15 @@ def apply_point_cloud_startup(p) -> None:
         _sz_depth  = PT_CLOUD_SIZE_DEPTH
         p._pt_fog_enabled = POINT_FOG
 
+    if _override:
+        if _override in PT_STARTUP_MODES:
+            mode = _override
+        else:
+            logger.warning(
+                'Ignoring --mode %r: not available for point clouds %s',
+                _override, sorted(PT_STARTUP_MODES),
+            )
+
     if mode == 'point_rgb':
         p._pt_cloud_use_rgb = True
         p._pt_cloud_depth = False
@@ -105,6 +117,8 @@ def apply_point_cloud_startup(p) -> None:
         p._pt_cloud_color = 'red'
     elif mode == 'depth':
         p._is_depth = True
+
+        p._pt_cloud_depth = True
         p._pt_cloud_size = _sz_depth
     else:
         p._pt_cloud_use_rgb = True

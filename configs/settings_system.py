@@ -1,0 +1,21 @@
+from configs.system_resources import (
+    get_usable_cpu, get_io_workers, compute_window_size,
+)
+
+DEFAULT_RESERVED_MEMORY_MB  = 2048
+DEFAULT_RESERVED_CORES      = 2
+DEFAULT_SYSTEM_USAGE        = 0.80
+
+DEFAULT_PRELOAD_ALL     = True
+DEFAULT_MAX_WINDOW_SIZE = 300
+DEFAULT_WINDOW_SIZE     = compute_window_size(
+    DEFAULT_RESERVED_MEMORY_MB, DEFAULT_SYSTEM_USAGE,
+    max_size=DEFAULT_MAX_WINDOW_SIZE,
+)
+DEFAULT_PRELOAD_AHEAD   = int(DEFAULT_WINDOW_SIZE * 0.875)
+PRELOAD_BACK_RATIO      = 0.50
+EVICT_MEMORY_THRESHOLD  = 0.875
+WORKER_COUNT            = get_usable_cpu(
+    DEFAULT_RESERVED_CORES, DEFAULT_SYSTEM_USAGE,
+)
+IO_WORKER_COUNT         = get_io_workers(DEFAULT_SYSTEM_USAGE)

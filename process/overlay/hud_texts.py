@@ -13,6 +13,7 @@ from configs.settings import (
     UI_MODE_PAD_PX, MODE_MSG_DURATION,
     UI_LOG_COLOR, UI_LOG_ERROR_COLOR,
     UI_LOG_PAD_PX, UI_LOG_PAD_PY,
+    UI_LOG_FORMAT, UI_LOG_MAX_CHARS, UI_LOG_ELLIPSIS,
     UI_HELP_COLOR,
     UI_HELP_BG_OPACITY,
     UI_COLORBAR_WIDTH, UI_COLORBAR_HEIGHT,
@@ -21,9 +22,12 @@ from configs.settings import (
     UI_COLORBAR_TITLE_COLOR, UI_COLORBAR_LABEL_COLOR,
     UI_COLORBAR_NLABELS, UI_COLORBAR_BAR_RATIO,
     ERROR_MSG_DURATION,
-    LOG_FORMAT, LOG_MSEC_FORMAT,
+    LOG_MSEC_FORMAT,
 )
 from process.mode.common import _hex_to_rgb, _set_font_family
+from process.overlay.font_scale import (
+    register_text_prop, update_font_scale, compute_log_max_chars,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +82,12 @@ _HELP_TEXT = (
     'H          Hide Help'
 )
 
+def _truncate_log(text: str, limit: int) -> str:
+    if limit <= 0 or len(text) <= limit:
+        return text
+    keep = max(limit - len(UI_LOG_ELLIPSIS), 0)
+    return text[:keep] + UI_LOG_ELLIPSIS
+
 class _LastMessageHandler(logging.Handler):
 
     def __init__(self):
@@ -85,8 +95,10 @@ class _LastMessageHandler(logging.Handler):
         self.last_message = ''
         self.last_level = logging.DEBUG
 
+        self.max_chars = UI_LOG_MAX_CHARS
+
     def emit(self, record):
-        self.last_message = self.format(record)
+        self.last_message = _truncate_log(self.format(record), self.max_chars)
         self.last_level = record.levelno
 
 def init_status_text(plotter) -> None:
@@ -95,7 +107,7 @@ def init_status_text(plotter) -> None:
     actor = vtk.vtkTextActor()
     prop = actor.GetTextProperty()
     _set_font_family(prop, UI_FONT_FAMILY)
-    prop.SetFontSize(_cfg.UI_STATUS_FONT_SIZE)
+    register_text_prop(plotter, prop, _cfg.UI_STATUS_FONT_SIZE)
     prop.SetLineSpacing(UI_STATUS_LINE_SPACING)
     prop.SetJustificationToLeft()
     prop.SetVerticalJustificationToTop()
@@ -180,10 +192,10 @@ def update_status_text(plotter, idx: int, total: int, fps: float) -> None:
 
         f'—\n'
         f'SYS.INFO: {sys_line}\n'
-        f'INPUT: {input_name} {time_part}\n'
+
         f'—\n'
         f'{elem_info}\n'
-        f'{cull_label}\n'
+
         f'{mode_str.upper()}.CAM: {cx:.3f}, {cy:.3f}, {cz:.3f}\n'
         f'FOCAL.LENGTH: {fl:.3f}\n'
         f'ZOOM: {zoom:.3f}'
@@ -196,7 +208,7 @@ def init_mode_text(plotter) -> None:
     actor = vtk.vtkTextActor()
     prop = actor.GetTextProperty()
     _set_font_family(prop, UI_FONT_FAMILY)
-    prop.SetFontSize(_cfg.UI_MODE_FONT_SIZE)
+    register_text_prop(plotter, prop, _cfg.UI_MODE_FONT_SIZE)
     prop.SetBold(True)
     prop.SetJustificationToRight()
     prop.SetVerticalJustificationToTop()
@@ -226,7 +238,7 @@ def init_log_overlay(plotter) -> None:
 
     handler = _LastMessageHandler()
     handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(LOG_FORMAT)
+    formatter = logging.Formatter(UI_LOG_FORMAT)
     formatter.default_msec_format = LOG_MSEC_FORMAT
     handler.setFormatter(formatter)
     logging.getLogger().addHandler(handler)
@@ -235,7 +247,7 @@ def init_log_overlay(plotter) -> None:
     actor = vtk.vtkTextActor()
     prop = actor.GetTextProperty()
     _set_font_family(prop, UI_FONT_FAMILY)
-    prop.SetFontSize(_cfg.UI_LOG_FONT_SIZE)
+    register_text_prop(plotter, prop, _cfg.UI_LOG_FONT_SIZE)
     prop.SetJustificationToLeft()
     prop.SetVerticalJustificationToBottom()
     prop.SetColor(*_hex_to_rgb(UI_LOG_COLOR))
@@ -247,7 +259,11 @@ def init_log_overlay(plotter) -> None:
     actor.SetInput('')
     _get_hud_renderer(plotter).AddActor2D(actor)
     plotter._log_actor = actor
-    logger.debug('init_log_overlay: actor registered')
+    handler.max_chars = compute_log_max_chars(plotter, prop)
+    logger.debug(
+        'init_log_overlay: actor registered (max_chars=%d)',
+        handler.max_chars,
+    )
 
 def update_log_overlay(plotter) -> None:
     actor = getattr(plotter, '_log_actor', None)
@@ -258,11 +274,19 @@ def update_log_overlay(plotter) -> None:
         actor.SetInput('')
         return
     prop = actor.GetTextProperty()
+    _size = prop.GetFontSize()
+    if _size != getattr(handler, '_last_font_size', None):
+        handler._last_font_size = _size
+        handler.max_chars = compute_log_max_chars(plotter, prop)
+        logger.debug(
+            'Log overlay max_chars=%d (font=%d)',
+            handler.max_chars, _size,
+        )
     error_msg = getattr(plotter, '_error_msg', '')
     error_time = getattr(plotter, '_error_msg_time', 0.0)
     now = time.time()
     if error_msg and (now - error_time) < ERROR_MSG_DURATION:
-        actor.SetInput(error_msg)
+        actor.SetInput(_truncate_log(error_msg, handler.max_chars))
         prop.SetColor(*_hex_to_rgb(UI_LOG_ERROR_COLOR))
     else:
         actor.SetInput(handler.last_message)
@@ -277,7 +301,7 @@ def init_help_overlay(plotter) -> None:
     actor = vtk.vtkTextActor()
     prop = actor.GetTextProperty()
     _set_font_family(prop, UI_FONT_FAMILY)
-    prop.SetFontSize(_cfg.UI_HELP_FONT_SIZE)
+    register_text_prop(plotter, prop, _cfg.UI_HELP_FONT_SIZE)
     prop.SetJustificationToLeft()
     prop.SetVerticalJustificationToBottom()
     prop.SetColor(*_hex_to_rgb(UI_HELP_COLOR))
@@ -330,7 +354,9 @@ def init_colorbar(plotter) -> None:
     _set_font_family(title_prop, UI_COLORBAR_FONT_FAMILY)
 
     if _cfg.UI_COLORBAR_TITLE_FONT_SIZE > 0:
-        title_prop.SetFontSize(_cfg.UI_COLORBAR_TITLE_FONT_SIZE)
+        register_text_prop(
+            plotter, title_prop, _cfg.UI_COLORBAR_TITLE_FONT_SIZE,
+        )
     else :
         title_prop.SetOpacity(0.0)
 
@@ -341,7 +367,7 @@ def init_colorbar(plotter) -> None:
 
     label_prop = actor.GetLabelTextProperty()
     _set_font_family(label_prop, UI_COLORBAR_FONT_FAMILY)
-    label_prop.SetFontSize(_cfg.UI_COLORBAR_LABEL_FONT_SIZE)
+    register_text_prop(plotter, label_prop, _cfg.UI_COLORBAR_LABEL_FONT_SIZE)
     label_prop.SetColor(*_hex_to_rgb(UI_COLORBAR_LABEL_COLOR))
     label_prop.BoldOff()
     label_prop.ItalicOff()
@@ -422,7 +448,7 @@ def init_overlay_text(
 
     actor = vtk.vtkTextActor()
     prop = actor.GetTextProperty()
-    prop.SetFontSize(font_size)
+    register_text_prop(plotter, prop, font_size)
     _set_font_family(prop, UI_FONT_FAMILY)
     prop.SetColor(*_hex_to_rgb(color))
     if position == 'right':
@@ -450,6 +476,7 @@ def init_overlay_text(
     logger.debug('init_overlay_text: "%s" registered', name)
 
 def update_periodic_overlays(plotter) -> None:
+    update_font_scale(plotter)
     update_log_overlay(plotter)
     update_colorbar(plotter)
 

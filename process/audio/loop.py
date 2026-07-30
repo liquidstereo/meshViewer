@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from configs.settings import (
     AUDIO_TARGET_FPS, TURNTABLE_STEP, WORKER_COUNT,
     AUDIO_MIN_DB_THRESHOLD, AUDIO_MIN_MESH_VALUE,
-    SAVE_FILENAME_DIGITS, SAVE_FILENAME_EXT,
+    SAVE_ENCODE_WORKERS, AUDIO_TARGET_FPS as _AUDIO_FPS,
 )
 from configs.colorize import Msg
 from process.overlay.hud_texts import (
@@ -17,7 +17,8 @@ from process.overlay.hud_texts import (
 )
 from process.render.loop import _playing_monitor
 from process.audio.state import AudioContext
-from process.window.display import capture_frame, save_frame_to_disk
+from process.window.display import capture_frame
+from process.render.save_sink import FrameSink, resolve_stem
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,24 @@ def run_audio_loop(
     ctx.monitor_ctx[1].start()
 
     ctx.executor = (
-        ThreadPoolExecutor(max_workers=WORKER_COUNT)
+        ThreadPoolExecutor(max_workers=SAVE_ENCODE_WORKERS)
         if ctx.is_recording else None
     )
+    ctx.sink = None
+    if ctx.is_recording:
+        _w, _h = plotter.render_window.GetSize()
+        ctx.sink = FrameSink(
+            ctx.record_dir, resolve_stem(plotter),
+            getattr(plotter, '_save_ext', 'png'),
+            ctx.executor, _w, _h, _AUDIO_FPS,
+            getattr(plotter, '_save_quality', 'high'),
+        )
+        plotter._save_sink = ctx.sink
+        logger.info(
+            'Audio save sink: mode=%s target=%s fps=%d',
+            'video' if ctx.sink.is_video else 'image_sequence',
+            ctx.sink.target, _AUDIO_FPS,
+        )
     frame_interval = 1.0 / AUDIO_TARGET_FPS
     azimuth_step = TURNTABLE_STEP / AUDIO_TARGET_FPS
     prev_t = time.perf_counter()
@@ -140,15 +156,10 @@ def run_audio_loop(
                 and (ctx.continuous or not _cycle_done)
             )
             if save_this:
-                fname = os.path.join(
-                    ctx.record_dir,
-                    f'{ctx.base_name}'
-                    f'.{i:0{SAVE_FILENAME_DIGITS}d}'
-                    f'.{SAVE_FILENAME_EXT}',
-                )
-                img = capture_frame(plotter)
-                ctx.executor.submit(save_frame_to_disk, img, fname)
-                ctx.save_counter += 1
+
+                ctx.sink.submit(capture_frame(plotter))
+                ctx.save_counter = ctx.sink.count
+                plotter._save_counter = ctx.save_counter
             else:
                 elapsed = time.perf_counter() - frame_start_t
                 wait = frame_interval - elapsed
@@ -167,3 +178,7 @@ def run_audio_loop(
             'Finalizing audio recording: %s', ctx.record_dir
         )
         ctx.executor.shutdown(wait=True)
+        if ctx.sink is not None:
+            ctx.sink.close()
+            ctx.sink = None
+            plotter._save_sink = None

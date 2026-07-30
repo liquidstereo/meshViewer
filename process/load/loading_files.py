@@ -13,7 +13,19 @@ from concurrent.futures import (
 from process.load.memory_guard import (
     release_process_memory, evict_file_cache,
 )
+from process.load.cache_policy import (
+    should_decimate, decimate_ratio, cache_points_array,
+    resolve_cache_normals, no_normal_requested, effective_startup_mode,
+)
+from process.load.frame_integrity import (
+    write_build_marker, clear_build_marker, is_build_failed,
+    plan_frame_holds, log_invalid_frames,
+    split_broken_sources, log_broken_sources, broken_name_map,
+)
 from process.load.load_mesh import read_polydata
+from process.load._cache_worker import (
+    classify_line, LINE_DONE, LINE_ERROR,
+)
 from process.load.load_pointcloud import (
     is_gs_ply, build_gs_npz_cache, load_gs_frame, pack_pt_colors,
     GS_CACHE_FILE,
@@ -31,7 +43,7 @@ from configs.settings import (
     PRELOAD_BACK_RATIO, EVICT_MEMORY_THRESHOLD,
     WORKER_COUNT, IO_WORKER_COUNT, CACHE_DIR_ROOT, TEX_EXTENSIONS,
     TEXTURE_DIR_ROOT,
-    AUTO_DECIMATE_THRESHOLD, AUTO_DECIMATE_MAX_CELLS, AUTO_DECIMATE_MAX_RATIO,
+    AUTO_DECIMATE_THRESHOLD, HOLD_INVALID_FRAME, SKIP_INVALID_FRAMES,
     PT_SUBSAMPLE_THRESHOLD, PT_SUBSAMPLE_TARGET,
     NP_SUBSAMPLE_THRESHOLD, NP_SUBSAMPLE_TARGET,
     NPY_AS_POINTCLOUD,
@@ -135,35 +147,47 @@ def _build_one_subprocess(obj_path: str, npz_dir: str) -> None:
             f' {os.path.basename(obj_path)}'
         )
 
-def _build_batch_subprocess(batch: list, npz_dir: str) -> int:
+def _build_batch_subprocess(
+    batch: list, npz_dir: str, on_done=None,
+) -> int:
     env = os.environ.copy()
     env['OMP_NUM_THREADS'] = '1'
     timeout = _CACHE_WORKER_TIMEOUT + _BATCH_FILE_TIMEOUT * len(batch)
+
     proc = subprocess.Popen(
         [sys.executable, '-m', 'process.load._cache_worker', npz_dir] + batch,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=env, text=True, encoding='utf-8', errors='replace',
     )
+
+    killer = threading.Timer(timeout, proc.kill)
+    killer.start()
+    err_lines = []
     try:
-        _, stderr = proc.communicate(timeout=timeout)
-        err_lines = [
-            ln for ln in stderr.decode(errors='replace').splitlines()
-            if ln.startswith(('ERROR ', 'TIMEOUT '))
-        ]
-        for ln in err_lines:
-            logger.error('Batch cache: %s', ln)
-        return len(err_lines)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.communicate()
+        for line in proc.stdout:
+            kind = classify_line(line.rstrip())
+            if kind == LINE_DONE:
+                if on_done is not None:
+                    on_done()
+            elif kind == LINE_ERROR:
+                err_lines.append(line.rstrip())
+        proc.wait()
+    finally:
+        killer.cancel()
+        if proc.stdout is not None:
+            proc.stdout.close()
+    for ln in err_lines:
+        logger.error('Batch cache: %s', ln)
+    if proc.returncode is not None and proc.returncode < 0:
         logger.error(
-            'Batch subprocess timeout (%ds): %d files.',
+            'Batch subprocess killed (timeout %ds): %d files.',
             timeout, len(batch),
         )
         raise RuntimeError(
             f'Batch timeout ({timeout}s): {len(batch)} files'
         )
+    return len(err_lines)
 
 def _frame_cache_dir(obj_path: str, npz_dir: str) -> str:
     name = os.path.basename(obj_path)
@@ -309,6 +333,19 @@ def _build_single_npz(obj_path: str, npz_dir: str) -> None:
         mesh = read_polydata(obj_path)
         frame_dir = _frame_cache_dir(obj_path, npz_dir)
         os.makedirs(frame_dir, exist_ok=True)
+
+        if mesh.n_points == 0:
+            write_build_marker(frame_dir, 'empty mesh: unreadable source')
+            raise RuntimeError(
+                f'Empty mesh (unreadable source):'
+                f' {os.path.basename(obj_path)}'
+            )
+        clear_build_marker(frame_dir)
+
+        if (resolve_cache_normals(
+                effective_startup_mode(), mesh.n_faces_strict > 0)
+                and 'Normals' not in mesh.point_data):
+            mesh.compute_normals(inplace=True)
         if mesh.faces.size > 0:
             faces = mesh.faces
             if int(faces.max()) < np.iinfo(np.int32).max:
@@ -327,7 +364,7 @@ def _build_single_npz(obj_path: str, npz_dir: str) -> None:
             evict_file_cache(_p)
 
         _p = os.path.join(frame_dir, 'points.npy')
-        np.save(_p, mesh.points)
+        np.save(_p, cache_points_array(mesh.points))
         evict_file_cache(_p)
     except Exception as e:
         logger.error('Frame cache build failed [%s]: %s', obj_path, e)
@@ -369,6 +406,8 @@ class FrameBuffer:
         self._no_cache = no_cache
         self._mesh_cache = {}
         self._tex_cache = {}
+        self._last_valid_mesh = None
+        self._broken_names = {}
         self._lock = threading.Lock()
         self._is_all_npy = all(
             os.path.splitext(f)[1].lower() in _NPY_LIKE
@@ -441,6 +480,8 @@ class FrameBuffer:
         else:
             if npz_needed:
                 self._ensure_npz_cache()
+        if SKIP_INVALID_FRAMES and not self._no_cache:
+            self._drop_broken_sources()
         if self._preload_all and not self._no_cache:
             self._preload_all = _check_preload_feasible(
                 self._obj_files, self._npz_dir
@@ -455,6 +496,9 @@ class FrameBuffer:
     @property
     def total(self) -> int:
         return len(self._obj_files)
+
+    def broken_source(self, idx: int) -> 'str | None':
+        return self._broken_names.get(idx)
 
     @property
     def max_points(self) -> int:
@@ -559,6 +603,7 @@ class FrameBuffer:
             'All %d meshes preloaded in %.2fs.',
             total, time.perf_counter() - t0,
         )
+        self._hold_invalid_frames()
         release_process_memory('preload_complete')
         self._max_points = 0
         with self._lock:
@@ -566,6 +611,47 @@ class FrameBuffer:
         if vals and all(m.n_faces_strict == 0 for m in vals):
             self._max_points = max(m.n_points for m in vals)
             logger.debug('PT max_points: %d', self._max_points)
+
+    def _drop_broken_sources(self) -> int:
+        kept, broken = split_broken_sources(
+            self._obj_files,
+            lambda f: _frame_cache_dir(f, self._npz_dir),
+        )
+        if not broken or not kept:
+            return 0
+        log_broken_sources(broken, len(self._obj_files))
+        logger.warning(
+            'Playback sequence: %d -> %d frames'
+            ' (%d broken source(s) excluded).',
+            len(self._obj_files), len(kept), len(broken),
+        )
+        self._obj_files = kept
+        return len(broken)
+
+    def _hold_invalid_frames(self) -> int:
+        if not HOLD_INVALID_FRAME:
+            return 0
+        with self._lock:
+            flags = [
+                self._mesh_cache.get(i) is not None
+                and self._mesh_cache[i].n_points > 0
+                for i in range(self.total)
+            ]
+            holds = plan_frame_holds(flags)
+            for idx, src_idx in holds.items():
+                self._mesh_cache[idx] = self._mesh_cache[src_idx]
+            self._broken_names.update(
+                broken_name_map(holds, self._obj_files)
+            )
+        if holds:
+            logger.warning(
+                'Invalid frames held from nearest valid frame:'
+                ' %d frames (idx %d-%d). Source files are'
+                ' empty or truncated.',
+                len(holds), min(holds), max(holds),
+            )
+            log_invalid_frames(holds, self._obj_files)
+        return len(holds)
 
     def _find_shared_texture(self) -> 'str | None':
         found_in_subdir = None
@@ -707,18 +793,39 @@ class FrameBuffer:
             logger.error('Mesh load failed [idx=%d]: %s', idx, e)
             mesh = pv.PolyData()
         with self._lock:
+            if mesh.n_points > 0:
+                self._last_valid_mesh = mesh
+            elif (HOLD_INVALID_FRAME
+                    and self._last_valid_mesh is not None):
+                mesh = self._last_valid_mesh
+                self._broken_names.update(
+                    broken_name_map({idx: idx}, self._obj_files)
+                )
             self._mesh_cache[idx] = mesh
         return mesh
 
     def _ensure_npz_cache(self) -> None:
         os.makedirs(self._npz_dir, exist_ok=True)
-        missing = [
+        stale = [
             f for f in self._obj_files
             if os.path.splitext(f)[1].lower() not in _NPY_LIKE
             and _is_cache_stale(
                 f, _frame_cache_dir(f, self._npz_dir)
             )
         ]
+        missing = [
+            f for f in stale
+            if not is_build_failed(
+                f, _frame_cache_dir(f, self._npz_dir)
+            )
+        ]
+        if len(stale) != len(missing):
+            logger.warning(
+                'Frame cache: %d unreadable source(s) skipped'
+                ' (build_failed marker). Fix or re-export them'
+                ' to re-enable those frames.',
+                len(stale) - len(missing),
+            )
         if not missing:
             return
 
@@ -824,11 +931,20 @@ class FrameBuffer:
                         ' (~%d files/batch).',
                         len(mesh_files), len(batches), batch_size,
                     )
+
+                    _bar_lock = threading.Lock()
+                    _ticks = [0]
+
+                    def _tick() -> None:
+                        with _bar_lock:
+                            _ticks[0] += 1
+                            bar()
+
                     with ThreadPoolExecutor(max_workers=workers) as exe:
                         futures = {
                             exe.submit(
                                 _build_batch_subprocess,
-                                b, self._npz_dir,
+                                b, self._npz_dir, _tick,
                             ): b
                             for b in batches
                         }
@@ -840,8 +956,10 @@ class FrameBuffer:
                                 logger.error(
                                     'Batch subprocess error: %s', e,
                                 )
-                            for _ in futures[fut]:
-                                bar()
+
+                    with _bar_lock:
+                        for _ in range(len(mesh_files) - _ticks[0]):
+                            bar()
                     release_process_memory('mesh_batch_complete')
 
         except KeyboardInterrupt:
@@ -885,21 +1003,28 @@ class FrameBuffer:
                     f'Cache unavailable: {os.path.basename(obj_path)}'
                 )
         if mesh.n_faces_strict > AUTO_DECIMATE_THRESHOLD:
-            if mesh.active_texture_coordinates is not None:
+            _has_tc = mesh.active_texture_coordinates is not None
+            if _has_tc:
                 logger.debug(
                     'Auto decimation [idx=%d]: skipped'
                     ' (textured mesh, %d faces)',
                     idx, mesh.n_faces_strict,
                 )
+            elif not should_decimate(mesh.n_faces_strict, _has_tc):
+                logger.debug(
+                    'Auto decimation [idx=%d]: skipped'
+                    ' (low gain, %d faces)',
+                    idx, mesh.n_faces_strict,
+                )
             else:
                 orig_faces = mesh.n_faces_strict
-                ratio = min(
-                    AUTO_DECIMATE_MAX_RATIO,
-                    orig_faces / AUTO_DECIMATE_MAX_CELLS,
-                )
+                ratio = decimate_ratio(orig_faces)
                 if not mesh.is_all_triangles:
                     mesh = mesh.triangulate()
                 mesh = mesh.decimate(ratio)
+
+                if 'Normals' in mesh.point_data:
+                    del mesh.point_data['Normals']
                 logger.debug(
                     'Auto decimation [idx=%d]: %d -> %d faces'
                     ' (ratio=%.3f)',
@@ -931,7 +1056,9 @@ class FrameBuffer:
                 'Point cloud subsampled [idx=%d]: %d -> %d pts',
                 idx, orig_pts, mesh.n_points,
             )
-        if self._smooth and 'Normals' not in mesh.point_data:
+        if (self._smooth and mesh.n_faces_strict > 0
+                and 'Normals' not in mesh.point_data
+                and not no_normal_requested()):
             mesh.compute_normals(inplace=True)
         if mesh.n_faces_strict == 0:
             if '_rgb_packed' not in mesh.point_data:

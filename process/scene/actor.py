@@ -18,8 +18,11 @@ from configs.settings import (
     FNORMAL_TIP_RESOLUTION, FNORMAL_SHAFT_RADIUS,
     FNORMAL_SHAFT_RESOLUTION, FNORMAL_SCALE, FNORMAL_CMAP,
     NP_CLOUD_DEPTH_COLOR,
+    UI_FONT_FAMILY,
 )
-from process.mode.common import _hex_to_rgb, _make_vtk_lut
+from process.mode.common import (
+    _hex_to_rgb, _make_vtk_lut, _set_font_family,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +131,7 @@ def _init_vtx_actors(plotter) -> None:
     vtx_mapper.SetLabelModeToLabelScalars()
     vtx_mapper.SetLabelFormat('%d')
     ltp = vtx_mapper.GetLabelTextProperty()
-    ltp.SetFontFamilyToCourier()
+    _set_font_family(ltp, UI_FONT_FAMILY)
     ltp.SetFontSize(_cfg.VTX_LABEL_FONT_SIZE)
     ltp.SetColor(*_hex_to_rgb(VTX_LABEL_COLOR))
     ltp.BoldOff()
@@ -226,7 +229,7 @@ def _init_pick_actor(plotter) -> None:
     pick_txt = vtk.vtkTextActor()
     pick_txt.SetInput('')
     pick_tp = pick_txt.GetTextProperty()
-    pick_tp.SetFontFamilyToCourier()
+    _set_font_family(pick_tp, UI_FONT_FAMILY)
     pick_tp.SetFontSize(_cfg.VTX_LABEL_FONT_SIZE + 2)
     pick_tp.SetColor(*_hex_to_rgb(VTX_PICK_COLOR))
     pick_tp.BoldOn()

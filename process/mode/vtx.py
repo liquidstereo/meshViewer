@@ -6,9 +6,11 @@ import configs.settings as _cfg
 
 from configs.settings import (
     VTX_SPATIAL_INTERVAL, VTX_SCREEN_INTERVAL,
-    VTX_LABEL_COLOR,
+    VTX_LABEL_COLOR, UI_FONT_FAMILY,
 )
-from process.mode.common import _project_to_screen, _hex_to_rgb
+from process.mode.common import (
+    _project_to_screen, _hex_to_rgb, _set_font_family,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +122,7 @@ def apply_vtx_labels(p, mesh):
     while len(pool) < n:
         ta = vtk.vtkTextActor()
         tp = ta.GetTextProperty()
-        tp.SetFontFamilyToCourier()
+        _set_font_family(tp, UI_FONT_FAMILY)
         tp.SetFontSize(_cfg.VTX_LABEL_FONT_SIZE)
         tp.SetColor(*_hex_to_rgb(VTX_LABEL_COLOR))
         tp.BoldOff()
