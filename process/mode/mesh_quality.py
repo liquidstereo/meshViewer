@@ -6,8 +6,7 @@ import pyvista as pv
 from configs.settings import (
     REDUCTION_MESH_QUALITY,
 )
-from vtk.util.numpy_support import numpy_to_vtk
-from process.mode.common import _set_mesh_input
+from process.mode.common import _set_mesh_input, _set_scalars_buffer
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +28,9 @@ def apply_mesh_quality(p, mesh):
     actor = p._mesh_actor
 
     cached = _set_mesh_input(mapper, qual, p, '_cached_mesh_poly')
-    vtk_q = numpy_to_vtk(q_scalars, deep=True)
-    vtk_q.SetName('aspect_ratio')
-    cached.GetPointData().SetScalars(vtk_q)
-    cached.GetPointData().Modified()
+    _set_scalars_buffer(
+        cached, q_scalars, 'aspect_ratio', p, '_mesh_quality_buf',
+    )
 
     mapper.ScalarVisibilityOn()
     mapper.SetLookupTable(p._quality_lut)

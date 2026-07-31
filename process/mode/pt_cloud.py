@@ -3,7 +3,6 @@ import logging
 import numpy as np
 import vtk as _vtk
 import matplotlib.cm as _cm
-from vtk.util.numpy_support import numpy_to_vtk
 
 from configs.settings import (
     POINT_FOG_START,
@@ -27,7 +26,9 @@ from configs.settings import (
     NP_POINTS_COLOR,
 )
 from process.mode.surface import _pack_vertex_colors
-from process.mode.common import _set_mesh_input, _hex_to_rgb
+from process.mode.common import (
+    _set_mesh_input, _set_scalars_buffer, _hex_to_rgb,
+)
 from process.mode.labels import AXIS_NAMES
 
 logger = logging.getLogger(__name__)
@@ -196,11 +197,10 @@ def _apply_pt_fog_gpu(p, mesh, mapper, actor, base_size: float, use_rgb: bool) -
             )
             c = [int(v * 255) for v in _hex_to_rgb(_pc)]
             raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
-        p._pt_color_buf = raw
-        vtk_c = numpy_to_vtk(raw, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
-        vtk_c.SetName('PtFogColors')
-        cached.GetPointData().SetScalars(vtk_c)
-        cached.GetPointData().Modified()
+        _set_scalars_buffer(
+            cached, raw, 'PtFogColors', p, '_pt_color_buf',
+            array_type=_vtk.VTK_UNSIGNED_CHAR,
+        )
         p._pt_fog_color_key = _color_key
     mapper.ScalarVisibilityOn()
     mapper.SetColorModeToDirectScalars()
@@ -275,11 +275,10 @@ def apply_pt_normal(p, mesh) -> None:
         if raw is None:
             c = [int(v * 255) for v in _hex_to_rgb(_pts_color)]
             raw = np.full((mesh.n_points, 3), c, dtype=np.uint8)
-    p._pt_color_buf = raw
-    vtk_c = numpy_to_vtk(raw, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
-    vtk_c.SetName('PtNormalColors')
-    cached.GetPointData().SetScalars(vtk_c)
-    cached.GetPointData().Modified()
+    _set_scalars_buffer(
+        cached, raw, 'PtNormalColors', p, '_pt_color_buf',
+        array_type=_vtk.VTK_UNSIGNED_CHAR,
+    )
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars()
     actor.SetTexture(None)
     prop = actor.GetProperty()
@@ -336,9 +335,11 @@ def apply_pt_depth(p, mesh) -> None:
     )
     fog_lut = build_pt_fog_lut(p, _depth_color, fog_start=_fog_start)
     idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8); blended = fog_lut[idx]
-    cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly'); p._pt_color_buf = blended
-    vtk_c = numpy_to_vtk(blended, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
-    vtk_c.SetName('PtDepthColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()
+    cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
+    _set_scalars_buffer(
+        cached, blended, 'PtDepthColors', p, '_pt_color_buf',
+        array_type=_vtk.VTK_UNSIGNED_CHAR,
+    )
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars(); p._cmap_lut = lut; p._cmap_range = (0.0, 1.0); p._cmap_title = f'DEPTH.{AXIS_NAMES[3]}'
     actor.SetTexture(None); prop = actor.GetProperty()
     prop.SetOpacity(_opacity); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(_base); prop.SetInterpolationToFlat()
@@ -427,9 +428,10 @@ def apply_pt_fog(p, mesh) -> None:
         blended = (
             (base * (1.0 - t) + bg_arr * t).clip(0.0, 1.0) * 255
         ).astype(np.uint8)
-    p._pt_color_buf = blended
-    vtk_c = numpy_to_vtk(blended, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
-    vtk_c.SetName('PtFogColors'); cached.GetPointData().SetScalars(vtk_c); cached.GetPointData().Modified()
+    _set_scalars_buffer(
+        cached, blended, 'PtFogColors', p, '_pt_color_buf',
+        array_type=_vtk.VTK_UNSIGNED_CHAR,
+    )
     mapper.ScalarVisibilityOn(); mapper.SetColorModeToDirectScalars()
     actor.SetTexture(None); prop = actor.GetProperty()
     prop.SetOpacity(_opacity); prop.SetLighting(False); prop.SetRepresentationToSurface(); prop.EdgeVisibilityOff(); prop.SetPointSize(_base); prop.SetInterpolationToFlat()

@@ -154,12 +154,13 @@ def init_plotter_state(plotter, args) -> None:
     plotter._save_ext = getattr(args, 'format', SAVE_EXT)
     plotter._save_quality = getattr(args, 'quality', SAVE_QUALITY)
     plotter._is_playing = args.animation
-    plotter._is_smooth = args.smooth
+    plotter._is_smooth = False
     plotter._smooth_cycle = 0
     plotter._pbr_with_tex = False
     plotter._prev_pbr_tex = None
     plotter._hdri_rotation = 0.0
-    plotter._is_smooth_shading = False
+
+    plotter._is_smooth_shading = args.smooth
     plotter._is_wire = False
     plotter._wire_mesh_hidden = True
     plotter._wire_axis = 3

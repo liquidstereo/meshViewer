@@ -1,7 +1,6 @@
 import logging
 import numpy as np
 import vtk
-from vtk.util.numpy_support import numpy_to_vtk
 
 from configs.settings import (
     COLOR_BG, COLOR_MESH_NO_TEX, COLOR_MESH_DEFAULT,
@@ -9,7 +8,10 @@ from configs.settings import (
     MESH_MATTE_COLOR,
     PT_CLOUD_SIZE_DEFAULT, NP_CLOUD_SIZE_DEFAULT,
 )
-from process.mode.common import _set_mesh_input, _resolve_color
+from process.mode.common import (
+    _set_mesh_input, _set_scalars_buffer, _set_normals_buffer,
+    _resolve_color,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +64,9 @@ def apply_normal(p, mesh, preloaded_tex):
     if _need_smooth:
         if 'Normals' not in mesh.point_data:
             mesh.compute_normals(inplace=True)
-        vtk_n = numpy_to_vtk(
-            mesh.point_data['Normals'], deep=True
+        _set_normals_buffer(
+            cached, mesh.point_data['Normals'], p, '_mesh_normal_buf',
         )
-        vtk_n.SetName('Normals')
-        cached.GetPointData().SetNormals(vtk_n)
-        cached.GetPointData().Modified()
     else:
         cached.GetPointData().SetNormals(None)
         cached.GetPointData().Modified()
@@ -78,15 +77,10 @@ def apply_normal(p, mesh, preloaded_tex):
         if not use_tex and _use_rgb and MESH_MATTE_COLOR is None else None
     )
     if vtx_colors is not None:
-        _is_prebaked = '_rgb_packed' in mesh.point_data
-        vtk_c = numpy_to_vtk(
-            vtx_colors,
-            deep=not (_is_prebaked and getattr(p, '_preload_all', True)),
+        _set_scalars_buffer(
+            cached, vtx_colors, 'VertexColors', p, '_mesh_color_buf',
             array_type=vtk.VTK_UNSIGNED_CHAR,
         )
-        vtk_c.SetName('VertexColors')
-        cached.GetPointData().SetScalars(vtk_c)
-        cached.GetPointData().Modified()
         mapper.ScalarVisibilityOn()
         mapper.SetColorModeToDirectScalars()
     else:

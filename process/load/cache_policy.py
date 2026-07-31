@@ -7,6 +7,7 @@ from configs.settings import (
     AUTO_DECIMATE_THRESHOLD, AUTO_DECIMATE_MAX_CELLS,
     AUTO_DECIMATE_MAX_RATIO, AUTO_DECIMATE_MIN_GAIN_RATIO,
     CACHE_POINTS_FLOAT32, CACHE_NORMALS, STARTUP_MODE,
+    DEFAULT_SMOOTH,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,4 +94,5 @@ def resolve_cache_normals(mode: str, has_faces: bool,
         return True
     if setting is False:
         return False
-    return mode_needs_normals(mode)
+
+    return mode_needs_normals(mode) or DEFAULT_SMOOTH

@@ -2,7 +2,7 @@ import numpy as np
 import vtk
 import pyvista as pv
 import matplotlib.cm as cm
-from vtk.util.numpy_support import numpy_to_vtk
+from vtk.util.numpy_support import numpy_to_vtk, get_numpy_array_type
 
 from configs.settings_font import resolve_font_file
 from configs.settings import COLOR_BG, FONT_PRIORITY, OFFSET_MESH_BACK
@@ -81,25 +81,77 @@ def _project_to_screen(p, world_pts: np.ndarray):
     ])
     return screen, valid
 
+def _swap_array_buffer(arr, data, p, ref_attr) -> bool:
+    if arr is None or data.ndim not in (1, 2):
+        return False
+    ncomp = 1 if data.ndim == 1 else data.shape[1]
+    if arr.GetNumberOfComponents() != ncomp:
+        return False
+    buf = np.ascontiguousarray(
+        data, dtype=get_numpy_array_type(arr.GetDataType())
+    )
+    flat = buf.reshape(-1)
+    arr.SetVoidArray(flat, flat.size, 1)
+    arr.Modified()
+    setattr(p, ref_attr, buf)
+    return True
+
+def _set_scalars_buffer(
+    cached, data, name, p, ref_attr, array_type=None,
+) -> None:
+    pd = cached.GetPointData()
+    existing = pd.GetScalars()
+    if (existing is not None
+            and existing.GetName() == name
+            and _swap_array_buffer(existing, data, p, ref_attr)):
+        pd.Modified()
+        return
+    if array_type is None:
+        vtk_arr = numpy_to_vtk(data, deep=True)
+    else:
+        vtk_arr = numpy_to_vtk(data, deep=True, array_type=array_type)
+    vtk_arr.SetName(name)
+    setattr(p, ref_attr, data)
+    pd.SetScalars(vtk_arr)
+    pd.Modified()
+
+def _set_normals_buffer(cached, data, p, ref_attr) -> None:
+    pd = cached.GetPointData()
+    existing = pd.GetNormals()
+    if (existing is not None
+            and _swap_array_buffer(existing, data, p, ref_attr)):
+        pd.Modified()
+        return
+    vtk_n = numpy_to_vtk(data, deep=True)
+    vtk_n.SetName('Normals')
+    setattr(p, ref_attr, data)
+    pd.SetNormals(vtk_n)
+    pd.Modified()
+
 def _set_mesh_input(mapper, mesh, p, attr):
     cached = getattr(p, attr, None)
     if (cached is not None
             and cached.GetNumberOfPoints() == mesh.n_points
             and cached.GetNumberOfCells() == mesh.n_cells):
-        cached.GetPoints().SetData(
-            numpy_to_vtk(mesh.points, deep=False)
-        )
-        cached.GetPoints().Modified()
+        pts = cached.GetPoints()
+        if not _swap_array_buffer(
+            pts.GetData(), mesh.points, p, f'{attr}_pts_ref',
+        ):
+            pts.SetData(numpy_to_vtk(mesh.points, deep=True))
+        pts.Modified()
         tc = mesh.active_texture_coordinates
         if tc is not None:
-            vtk_tc = numpy_to_vtk(tc, deep=True)
             existing = cached.GetPointData().GetTCoords()
-            vtk_tc.SetName(
-                existing.GetName()
-                if existing is not None
-                else 'TextureCoordinates'
-            )
-            cached.GetPointData().SetTCoords(vtk_tc)
+            if not _swap_array_buffer(
+                existing, tc, p, f'{attr}_tc_ref',
+            ):
+                vtk_tc = numpy_to_vtk(tc, deep=True)
+                vtk_tc.SetName(
+                    existing.GetName()
+                    if existing is not None
+                    else 'TextureCoordinates'
+                )
+                cached.GetPointData().SetTCoords(vtk_tc)
         cached.Modified()
         mapper.SetInputData(cached)
         return cached

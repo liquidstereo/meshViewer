@@ -17,6 +17,7 @@ HDRI_ROT_STEP   = 5.0
 STARTUP_MODE    = 'default'
 
 DEFAULT_TEXTURE = False
+
 DEFAULT_SMOOTH  = True
 
 CACHE_NORMALS   = 'auto'

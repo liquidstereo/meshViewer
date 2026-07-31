@@ -1,10 +1,9 @@
 import logging
 import numpy as np
 import vtk
-from vtk.util.numpy_support import numpy_to_vtk
 
 from configs.settings import NORMAL_COLOR_ENABLE_LIGHTING
-from process.mode.common import _set_mesh_input
+from process.mode.common import _set_mesh_input, _set_scalars_buffer
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +17,14 @@ def apply_normal_color(p, mesh):
 
     colors = ((normals * 0.5 + 0.5).clip(0, 1) * 255
               ).astype(np.uint8)
-    vtk_colors = numpy_to_vtk(
-        colors, deep=True, array_type=vtk.VTK_UNSIGNED_CHAR,
-    )
-    vtk_colors.SetName('NormalColor')
-
     mapper = p._mesh_mapper
     actor = p._mesh_actor
 
     cached = _set_mesh_input(mapper, mesh, p, '_cached_mesh_poly')
-    cached.GetPointData().SetScalars(vtk_colors)
-    cached.GetPointData().Modified()
+    _set_scalars_buffer(
+        cached, colors, 'NormalColor', p, '_mesh_color_buf',
+        array_type=vtk.VTK_UNSIGNED_CHAR,
+    )
 
     mapper.SetScalarModeToDefault()
     mapper.SetColorModeToDirectScalars()

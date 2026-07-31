@@ -180,10 +180,10 @@ def register(p, trigger, set_mode, total_len):
     def _reset_all():
         p._idx = 0
         p._is_playing = SHOW_ANIMATION
-        p._is_smooth = DEFAULT_SMOOTH
+        p._is_smooth = False
         p._smooth_cycle = 0
         p._pbr_with_tex = False
-        p._is_smooth_shading = False
+        p._is_smooth_shading = DEFAULT_SMOOTH
         p._is_wire = False
         p._is_tex = DEFAULT_TEXTURE
         p._is_grid = SHOW_GRID

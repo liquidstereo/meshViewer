@@ -3,7 +3,6 @@ import platform as _platform
 import numpy as np
 import vtk as _vtk
 import matplotlib.cm as _cm
-from vtk.util.numpy_support import numpy_to_vtk
 
 from configs.settings import (
     DEPTH_SHADING_FLAT, DEPTH_ENABLE_LIGHTING,
@@ -16,7 +15,9 @@ from configs.settings import (
     NP_CLOUD_SHADER_SCALE, NP_CLOUD_SHADER_SIZE_MIN, NP_CLOUD_SHADER_SIZE_MAX,
     NP_CLOUD_SIZE_DEFAULT,
 )
-from process.mode.common import _hex_to_rgb, _set_mesh_input, _make_vtk_lut
+from process.mode.common import (
+    _hex_to_rgb, _set_mesh_input, _set_scalars_buffer, _make_vtk_lut,
+)
 from process.mode.labels import AXIS_NAMES
 
 logger = logging.getLogger(__name__)
@@ -402,19 +403,17 @@ def apply_depth(p, mesh):
             fog_lut = _build_depth_fog_lut(p, is_pc=is_pc)
             idx = (depth_n * 255.0).clip(0, 255).astype(np.uint8)
             blended = fog_lut[idx]
-            p._depth_color_buf = blended
-            vtk_c = numpy_to_vtk(blended, deep=False, array_type=_vtk.VTK_UNSIGNED_CHAR)
-            vtk_c.SetName('DepthFogColors')
-            cached.GetPointData().SetScalars(vtk_c)
-            cached.GetPointData().Modified()
+            _set_scalars_buffer(
+                cached, blended, 'DepthFogColors', p, '_depth_color_buf',
+                array_type=_vtk.VTK_UNSIGNED_CHAR,
+            )
             mapper.ScalarVisibilityOn()
             mapper.SetColorModeToDirectScalars()
         else:
-            p._depth_scalar_buf = depth_n.astype(np.float64)
-            vtk_d = numpy_to_vtk(p._depth_scalar_buf, deep=False)
-            vtk_d.SetName('DepthScalars')
-            cached.GetPointData().SetScalars(vtk_d)
-            cached.GetPointData().Modified()
+            _set_scalars_buffer(
+                cached, depth_n.astype(np.float64), 'DepthScalars',
+                p, '_depth_scalar_buf',
+            )
             mapper.SetLookupTable(lut)
             mapper.SetScalarRange(0.0, 1.0)
             mapper.ScalarVisibilityOn()
