@@ -78,6 +78,10 @@ def detect_file_type(first_file: str) -> str:
         return 'np_data'
     return detect_geometry_type(first_file)
 
+def detect_input_type(args, first_file: str) -> str:
+    args._file_type = detect_file_type(first_file)
+    return args._file_type
+
 def apply_input_format(plotter, first_file: str) -> None:
     t = time.perf_counter()
     ext = os.path.splitext(first_file)[1].lower()
@@ -220,6 +224,8 @@ def show_window(plotter, headless: bool = False) -> None:
         'show_window: %.3fs headless=%s',
         time.perf_counter() - t, headless,
     )
+    plotter._t_shown = time.perf_counter()
+    logger.info('Window shown — starting overlay init.')
 
 def load_seq_overlay(plotter, args, total: int) -> None:
     if not DISPLAY_SEQUENCE:
@@ -245,6 +251,12 @@ def apply_hide_info(plotter) -> None:
     apply_overlay_visibility(plotter)
 
 def run_loop(plotter, buffer) -> None:
+    _t_shown = getattr(plotter, '_t_shown', None)
+    if _t_shown is not None:
+        logger.info(
+            'Window->render_loop gap: %.3fs',
+            time.perf_counter() - _t_shown,
+        )
     try:
         render_loop(plotter, buffer)
     except KeyboardInterrupt:

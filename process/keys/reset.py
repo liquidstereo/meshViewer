@@ -2,12 +2,7 @@ import os
 import logging
 import numpy as np
 
-from configs.colorize import Msg
-from configs.logging_cfg import (
-    error_log_path, error_count, finalize_error_log,
-)
 from configs.settings import (
-    LOG_DIR,
     SHOW_ANIMATION, SHOW_BACKFACE, SHOW_BBOX,
     SHOW_GRID, SHOW_LIGHTING, DEFAULT_SMOOTH, DEFAULT_TEXTURE,
     SHOW_TURNTABLE,
@@ -47,10 +42,9 @@ from process.mode.labels import (
     FMT_ACTOR_CYCLE,
     AXIS_SWAP_NAMES, FMT_AXIS_SWAP,
 )
-from process.init.session_log import log_session_end, _SETTINGS_LOG_FILENAME
+from process.init.exit_summary import emit_exit_summary, finalize_logs
 from process.scene.grid import setup_grid
 from process.window.display import save_screenshot
-from process.render.save_sink import format_saved_message
 from process.mode.default import apply_default_reset
 from process.scene.lighting import apply_lighting
 from process.window.toggle_info import toggle_info_overlay
@@ -577,38 +571,14 @@ def register(p, trigger, set_mode, total_len):
 
         input_name = getattr(p, '_input_name', '?')
         total = getattr(p, '_total', 0)
-        log_path = os.path.join(LOG_DIR, f'{input_name}.log')
         start_t = getattr(p, '_start_time', None)
         save_counter = getattr(p, '_save_counter', 0)
         save_path_val = getattr(p, '_save_path', None)
-        log_session_end(input_name, total, start_t, save_counter, save_path_val)
-        logging.shutdown()
-        finalize_error_log(input_name)
-
-        result_count_surfix = ''
-        if total > 1 :
-            result_count_surfix = f' ({total} Files)'
-        Msg.Result(
-            f'Mesh playback for "{input_name}" finished.{result_count_surfix}',
-            divide=False
+        finalize_logs(
+            input_name, total, start_t, save_counter, save_path_val,
         )
-        err_count = error_count()
-        if err_count > 0:
-            Msg.Error(
-                f'{err_count} Error Found. Please Refer To The'
-                f' Log File For Details({error_log_path(input_name)})', divide=False
-            )
 
-        save_counter = getattr(p, '_save_counter', 0)
-        if sink_target and save_counter > 0:
-            Msg.Dim(format_saved_message(save_counter, sink_target))
-        save_dir = getattr(p, '_save_dir', None)
-        if save_dir:
-            _settings_log = os.path.join(
-                os.path.relpath(save_dir), _SETTINGS_LOG_FILENAME
-            )
-
-        Msg.Dim(f'Please refer to the log file for details. ({log_path})')
+        emit_exit_summary(input_name, total, save_counter, sink_target)
         try:
             p.close()
         finally:

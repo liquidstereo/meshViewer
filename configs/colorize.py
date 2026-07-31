@@ -261,6 +261,31 @@ class Msg:
             styled, verbose, flush, divide
         )
 
+    _FORE = {
+        'red': Fore.RED,
+        'green': Fore.GREEN,
+        'blue': Fore.BLUE,
+        'yellow': Fore.YELLOW,
+        'cyan': Fore.CYAN,
+        'magenta': Fore.MAGENTA,
+        'white': Fore.WHITE,
+        'black': Fore.BLACK,
+    }
+
+    @staticmethod
+    def Segments(parts, upper: bool = True) -> str:
+        if not parts:
+            return ''
+        out, prev = [Style.BRIGHT], None
+        for color, text in parts:
+            fore = Msg._FORE[color]
+            if fore != prev:
+                out.append(fore)
+                prev = fore
+            out.append(Msg._transform_message(text, upper))
+        out.append(Style.RESET_ALL)
+        return ''.join(out)
+
     @staticmethod
     def Red(
         message: str, divide: bool = False,

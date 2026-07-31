@@ -9,6 +9,19 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 ERROR_LOG_PREFIX = 'error_'
 
+HEADLESS_LOG_SUFFIX = '_headless'
+
+_log_basename = ''
+
+def resolve_log_basename(input_name: str, headless: bool = False) -> str:
+    return f'{input_name}{HEADLESS_LOG_SUFFIX}' if headless else input_name
+
+def log_basename() -> str:
+    return _log_basename
+
+def log_file_path() -> str:
+    return os.path.join(LOG_DIR, f'{_log_basename}.log')
+
 class _ErrorCounter(logging.Handler):
 
     def __init__(self):
@@ -89,9 +102,13 @@ class _DetailFormatter(logging.Formatter):
 def setup_logging(
     input_name: str,
     level: int = logging.INFO,
+    headless: bool = False,
 ) -> None:
+    global _log_basename
+    _log_basename = resolve_log_basename(input_name, headless)
+
     os.makedirs(LOG_DIR, exist_ok=True)
-    log_path = os.path.join(LOG_DIR, f'{input_name}.log')
+    log_path = log_file_path()
 
     handler = logging.FileHandler(log_path, mode='w', encoding='utf-8')
     handler.setLevel(level)
@@ -99,7 +116,7 @@ def setup_logging(
     formatter.default_msec_format = LOG_MSEC_FORMAT
     handler.setFormatter(formatter)
 
-    err_handler = make_error_handler(input_name)
+    err_handler = make_error_handler(_log_basename)
     err_handler.setFormatter(formatter)
 
     _error_counter.count = 0
@@ -110,7 +127,7 @@ def setup_logging(
     )
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
-    vtk_log_path = os.path.join(LOG_DIR, f'{input_name}_vtk.log')
+    vtk_log_path = os.path.join(LOG_DIR, f'{_log_basename}_vtk.log')
     vtk_win = _vtk.vtkFileOutputWindow()
     vtk_win.SetFileName(vtk_log_path)
     vtk_win.SetFlush(True)

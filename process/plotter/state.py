@@ -38,6 +38,9 @@ _STARTUP_FLAG_MAP = {
     'vtx':          '_is_vtx',
 }
 
+_SHADING_MODE = 'smooth'
+_SHADING_FLAG = '_is_smooth_shading'
+
 _SMOOTH_STARTUP_MAP = {
     'pbr_tex.tex': 0,
     'pbr_tex.pbr': 1,
@@ -110,6 +113,8 @@ def current_mode_name(p) -> str:
             else 'point_white'
         )
     for mode, flag in _STARTUP_FLAG_MAP.items():
+        if flag == _SHADING_FLAG:
+            continue
         if getattr(p, flag, False):
             return mode
     if getattr(p, '_is_smooth', False):
@@ -117,6 +122,9 @@ def current_mode_name(p) -> str:
         for mode, i in _SMOOTH_STARTUP_MAP.items():
             if i == idx:
                 return mode
+    if (getattr(p, _SHADING_FLAG, False)
+            and effective_startup_mode() == _SHADING_MODE):
+        return _SHADING_MODE
     return 'default'
 
 def _apply_startup_mode(plotter) -> None:
