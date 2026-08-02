@@ -3,6 +3,7 @@ import logging
 import time
 
 from process.init import init_vtk, log_session_start
+from process.init.signals import set_shutdown_target
 from process.overlay import init_overlays
 from process.audio.camera import setup_audio_cam, make_cam_callbacks
 from process.audio.state import init_audio_state
@@ -28,6 +29,9 @@ def exec_audio_viewer(audio_path: str, args) -> None:
     init_vtk()
 
     plotter = create_audio_plotter(args)
+    set_shutdown_target(
+        plotter=plotter, input_path=os.path.relpath(audio_path),
+    )
 
     log_session_start([audio_path], args)
     start = float(args.frame_start)

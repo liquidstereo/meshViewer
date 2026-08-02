@@ -30,6 +30,9 @@ class Msg:
 
     _last_was_flush = False
 
+    _last_was_divider = False
+    DIVIDER = '—'
+
     @staticmethod
     def _clear_line(line: int = 0):
         if line < 0:
@@ -45,6 +48,18 @@ class Msg:
         if Msg._last_was_flush:
             Msg._clear_line()
             Msg._last_was_flush = False
+
+    @staticmethod
+    def Divider() -> None:
+        if Msg._last_was_divider:
+            return
+        Msg._handle_flush()
+        print(Msg.DIVIDER)
+        Msg._last_was_divider = True
+
+    @staticmethod
+    def mark_dirty() -> None:
+        Msg._last_was_divider = False
 
     @staticmethod
     def _transform_message(
@@ -102,10 +117,13 @@ class Msg:
         flush: bool = False,
         divide: bool = False,
     ) -> str | None:
-        if divide:
-            styled = f'—\n{styled}\n—'
         if verbose:
+
+            if divide:
+                return f'{Msg.DIVIDER}\n{styled}\n{Msg.DIVIDER}'
             return styled
+        if divide:
+            Msg.Divider()
         if flush:
             Msg._clear_line()
             Msg._last_was_flush = True
@@ -116,6 +134,11 @@ class Msg:
             end='\r' if flush else '\n',
             flush=flush,
         )
+
+        if not flush:
+            Msg._last_was_divider = False
+        if divide:
+            Msg.Divider()
         return None
 
     @staticmethod

@@ -54,7 +54,7 @@ def evict_file_cache(file_path: str) -> None:
     except (AttributeError, OSError):
         pass
 
-def release_process_memory(label: str = '') -> None:
+def release_process_memory(label: str = '') -> dict:
     proc = psutil.Process()
     rss_before = proc.memory_info().rss
     vm_before = psutil.virtual_memory()
@@ -81,3 +81,9 @@ def release_process_memory(label: str = '') -> None:
         vm_before.percent, vm_after.percent,
         vm_before.total / _mb,
     )
+    return {
+        'rss_before': rss_before,
+        'rss_after': rss_after,
+        'freed': rss_before - rss_after,
+        'method': method,
+    }

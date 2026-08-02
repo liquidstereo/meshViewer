@@ -8,7 +8,7 @@ from configs.keybinding import (
     KEY_INC, KEY_DEC, KEY_AXIS_NEXT, KEY_AXIS_PREV,
 )
 from process.mode.labels import (
-    SMOOTH_CYCLE_LABELS, AXIS_NAMES,
+    SMOOTH_CYCLE_LABELS, AXIS_NAMES, ID_STYLE_NAMES, id_style_label,
     FMT_HDRI_ROT, FMT_EDGE_ANGLE, FMT_ISO_COUNT,
     FMT_VTX_INTERVAL, FMT_MESH_RED, FMT_PT_SIZE,
     FMT_ISO_AXIS, FMT_DEPTH_AXIS, FMT_WIRE_AXIS, FMT_NORMAL_AXIS,
@@ -122,6 +122,7 @@ def register(p, trigger, set_mode, apply_smooth_cycle):
             or getattr(p, '_is_depth', False)
             or getattr(p, '_is_wire', False)
             or getattr(p, '_is_fnormal', False)
+            or getattr(p, '_is_id', False)
         )
 
     def _cycle_axis(delta):
@@ -146,6 +147,14 @@ def register(p, trigger, set_mode, apply_smooth_cycle):
                 getattr(p, '_fnormal_axis', 3) + delta
             ) % 4
             set_mode(FMT_NORMAL_AXIS.format(AXIS_NAMES[p._fnormal_axis]))
+            trigger()
+        elif getattr(p, '_is_id', False):
+
+            p._id_style = (
+                getattr(p, '_id_style', 1) + delta
+            ) % len(ID_STYLE_NAMES)
+            p._prev_mode = None
+            set_mode(id_style_label(p._id_style))
             trigger()
 
     def _cycle_smooth(step):

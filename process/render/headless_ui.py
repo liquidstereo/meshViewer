@@ -1,13 +1,14 @@
 import sys
 import shutil
 import threading
+import contextlib
 
 from alive_progress import alive_bar
 
 from configs.colorize import Msg
 from configs.system_resources import get_system_info, get_gpu_info
 
-_BAR_TITLE = 'EXPORTING FRAME(s)...'
+_BAR_TITLE = 'EXPORTING FRAMES...'
 _BAR_TITLE_LENGTH = 25
 _BAR_LENGTH = 15
 _JOIN_TIMEOUT = 2.0
@@ -18,15 +19,22 @@ _COLOR_CPU = 'red'
 _COLOR_MEM = 'cyan'
 _COLOR_GPU = 'green'
 
-def headless_progress(total: int):
-    return alive_bar(
+def headless_progress(total: int, title: str = _BAR_TITLE):
+    return _bar_context(total, title)
+
+@contextlib.contextmanager
+def _bar_context(total: int, title: str):
+    with alive_bar(
         total, spinner=None,
-        title=_BAR_TITLE,
+        title=title,
         title_length=_BAR_TITLE_LENGTH, length=_BAR_LENGTH,
         dual_line=True, stats=True,
         elapsed=True, manual=False,
         enrich_print=False, force_tty=True,
-    )
+    ) as bar:
+        yield bar
+
+    Msg.mark_dirty()
 
 def text_cols() -> int:
     if not sys.stdout.isatty():

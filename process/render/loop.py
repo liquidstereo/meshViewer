@@ -6,7 +6,6 @@ import logging
 import threading
 from contextlib import ExitStack
 from concurrent.futures import ThreadPoolExecutor
-import numpy as np
 
 from configs.colorize import Msg
 from configs.system_resources import get_system_info, get_gpu_info
@@ -24,11 +23,12 @@ from process.mode.surface import apply_normal
 from process.scene.grid import update_grid_bounds
 from process.load.frame_integrity import format_broken_message
 from process.window.display import capture_frame, PBOCapture
-from process.render.save_sink import create_sink
+from process.render.save_sink import create_sink, format_saved_message
 from process.render.headless_ui import (
     headless_progress, start_sysinfo_monitor, stop_sysinfo_monitor,
 )
 from process.init.exit_summary import emit_exit_summary, finalize_logs
+from process.init.shutdown import close_progress, graceful_shutdown
 from process.overlay.hud_texts import (
     update_status_text, update_log_overlay,
     update_mode_text, update_colorbar,
@@ -46,6 +46,7 @@ _HEADLESS_PLAY_MSG = (
 def _is_cam_dependent_mode(p) -> bool:
     return (
         getattr(p, '_is_vtx', False)
+        or getattr(p, '_is_outline', False)
         or (getattr(p, '_n_faces', 1) == 0
             and getattr(p, '_pt_fog_enabled', False))
         or (getattr(p, '_is_depth', False)
@@ -140,25 +141,6 @@ def _mesh_bounds(plotter, mesh) -> tuple:
         s * b[5] + (1 - s) * cz,
     )
 
-def _apply_pending_startup_cam(plotter) -> None:
-    pending = getattr(plotter, '_pending_startup_cam', None)
-    if pending is None:
-        return
-    direction, viewup = pending
-    cx, cy, cz = plotter._norm_center
-    fp = np.array([cx, cy, cz])
-    init_pos = np.array(plotter._init_cam_pos[0])
-    dist = float(np.linalg.norm(init_pos - fp))
-    cam = plotter.renderer.GetActiveCamera()
-    cam.SetPosition(*(fp + np.array(direction, dtype=float) * dist))
-    cam.SetFocalPoint(*fp)
-    cam.SetViewUp(*viewup)
-    plotter.renderer.ResetCamera()
-    plotter._init_cam_pos = plotter.camera_position
-    plotter._init_parallel_scale = cam.GetParallelScale()
-    plotter._init_view_angle = cam.GetViewAngle()
-    plotter._pending_startup_cam = None
-
 def _update_seq(plotter, idx):
     seq = getattr(plotter, '_seq_overlay', None)
     if seq is not None:
@@ -179,7 +161,41 @@ def _finish_save(sink, count) -> None:
         'Save complete: %d frames -> %s', count, sink.target,
     )
 
+def _mark_batch_complete(plotter, sink, count, bar) -> None:
+    if bar is not None:
+        title = getattr(plotter, '_batch_title', '') or ''
+        bar.title = f'{title} COMPLETE'
+    targets = getattr(plotter, '_batch_targets', None)
+    if targets is not None and sink.display_target:
+        targets.append(sink.display_target)
+    plotter._batch_saved_count = count
+
+def _start_playing_monitor(plotter, headless: bool) -> tuple:
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=_playing_monitor,
+        args=(stop_event, _HEADLESS_PLAY_MSG if headless else None),
+        daemon=True,
+    )
+    thread.start()
+    plotter._blink_stop_event = stop_event
+    plotter._blink_thread_ref = thread
+    return stop_event, thread
+
+def _on_save_complete(plotter, sink, count, bar, batch, headless) -> tuple:
+    _finish_save(sink, count)
+    if batch:
+        _mark_batch_complete(plotter, sink, count, bar)
+        return None, None
+    if headless:
+        return None, None
+    close_progress(plotter)
+    Msg.Dim(format_saved_message(count, sink.display_target))
+    return _start_playing_monitor(plotter, headless)
+
 def _emit_headless_exit(plotter, total, sink) -> None:
+
+    graceful_shutdown(plotter, 'headless')
     input_name = getattr(plotter, '_input_name', '?')
     finalize_logs(
         input_name, total,
@@ -201,6 +217,11 @@ def render_loop(plotter, buffer) -> None:
     save_path = getattr(plotter, '_save_path', None)
     save_loop = getattr(plotter, '_save_loop', False)
     headless = getattr(plotter, '_headless', False)
+    batch = getattr(plotter, '_batch_active', False)
+    batch_last = getattr(plotter, '_batch_last', True)
+
+    gui_save = not headless and not batch
+    batch_cycle_done = False
     save_counter = 0
     _RECORD_TOTAL = total
     rendered_idx = -1
@@ -236,12 +257,22 @@ def render_loop(plotter, buffer) -> None:
     _stack = ExitStack()
     bar = None
     _bar_stop = _bar_thread = None
-    if headless and save_sink is not None:
+    if save_sink is not None:
 
-        bar = _stack.enter_context(headless_progress(_RECORD_TOTAL))
+        _bar_title = getattr(plotter, '_batch_title', None)
+        bar = _stack.enter_context(
+            headless_progress(_RECORD_TOTAL, _bar_title)
+            if _bar_title else headless_progress(_RECORD_TOTAL)
+        )
         _bar_stop, _bar_thread = start_sysinfo_monitor(bar)
     else:
         Msg.Dim(f'Load System Usage... Please Wait...', flush=True)
+
+    def _close_bar():
+        stop_sysinfo_monitor(_bar_stop, _bar_thread)
+        _stack.close()
+
+    plotter._progress_close = _close_bar
 
     last_anim_time = time.time() - _FRAME_INTERVAL
     while plotter.render_window is not None:
@@ -359,12 +390,13 @@ def render_loop(plotter, buffer) -> None:
                 )
             t_mode = time.perf_counter() - t0
             update_grid_bounds(plotter, _mesh_bounds(plotter, mesh))
-            if rendered_idx < 0:
-                _apply_pending_startup_cam(plotter)
             rendered_idx = plotter._idx
             buffer.notify(plotter._idx)
             if anim_fired:
                 plotter._idx = (plotter._idx + 1) % total
+
+                if batch and save_sink is None and plotter._idx == 0:
+                    batch_cycle_done = True
             frame_count += 1
             needs_render = True
             if style_needed:
@@ -475,7 +507,12 @@ def render_loop(plotter, buffer) -> None:
                             pbo_capture = None
                             save_path = None
                             plotter._save_path = None
-                            _finish_save(save_sink, save_counter)
+                            _blink_stop, _blink_thread = _on_save_complete(
+                                plotter, save_sink, save_counter,
+                                bar, batch, headless,
+                            )
+                            if gui_save:
+                                bar = None
                 else:
                     _t_cap = time.perf_counter()
                     img = capture_frame(plotter)
@@ -491,14 +528,25 @@ def render_loop(plotter, buffer) -> None:
                     if not save_loop and save_counter >= _RECORD_TOTAL:
                         save_path = None
                         plotter._save_path = None
-                        _finish_save(save_sink, save_counter)
+                        _blink_stop, _blink_thread = _on_save_complete(
+                            plotter, save_sink, save_counter,
+                            bar, batch, headless,
+                        )
+                        if gui_save:
+                            bar = None
 
-            if headless and save_sink is not None and save_path is None:
+            if (headless or batch) and save_sink is not None and (
+                save_path is None
+            ):
                 logger.info(
-                    'headless: save finished (%d frames) - exiting loop',
-                    save_counter,
+                    '%s: save finished (%d frames) - exiting loop',
+                    'batch' if batch else 'headless', save_counter,
                 )
                 break
+
+        if batch_cycle_done:
+            logger.info('batch: playback cycle finished - exiting loop')
+            break
 
         ui_interval = (
             UPDATE_INTERVAL_PLAY
@@ -524,18 +572,9 @@ def render_loop(plotter, buffer) -> None:
                 rw.SetDesiredUpdateRate(TARGET_ANIM_FPS)
 
                 if bar is None:
-                    _blink_stop = threading.Event()
-                    _blink_thread = threading.Thread(
-                        target=_playing_monitor,
-                        args=(
-                            _blink_stop,
-                            _HEADLESS_PLAY_MSG if headless else None,
-                        ),
-                        daemon=True,
+                    _blink_stop, _blink_thread = _start_playing_monitor(
+                        plotter, headless,
                     )
-                    _blink_thread.start()
-                    plotter._blink_stop_event = _blink_stop
-                    plotter._blink_thread_ref = _blink_thread
             else:
                 rw.SetDesiredUpdateRate(0.001)
                 if _blink_stop is not None:
@@ -572,9 +611,8 @@ def render_loop(plotter, buffer) -> None:
     executor.shutdown(wait=True)
     if save_sink is not None:
         save_sink.close()
-    stop_sysinfo_monitor(_bar_stop, _bar_thread)
-    _stack.close()
+    close_progress(plotter)
     logger.debug('render_loop ended')
 
-    if headless and save_sink is not None:
+    if headless and save_sink is not None and not batch:
         _emit_headless_exit(plotter, total, save_sink)

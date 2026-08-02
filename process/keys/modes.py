@@ -2,8 +2,8 @@ import logging
 
 from configs.keybinding import (
     KEY_ISO, KEY_WIRE, KEY_LIGHT, KEY_NORMAL_COLOR,
-    KEY_MESH_QUALITY, KEY_VTX, KEY_BACKFACE,
-    KEY_FACE_NORMAL, KEY_DEPTH, KEY_EDGE,
+    KEY_MESH_QUALITY, KEY_VTX,
+    KEY_FACE_NORMAL, KEY_DEPTH, KEY_EDGE, KEY_ID, KEY_OUTLINE,
 )
 from configs.settings import (
     PT_CLOUD_SIZE_DEFAULT,
@@ -17,12 +17,9 @@ from process.mode.default import apply_default_reset
 from process.mode.labels import (
     LBL_ISOLINE, LBL_WIREFRAME, LBL_REDUCTION,
     LBL_SURF_NORMAL, LBL_QUALITY, LBL_VERTICES,
-    LBL_FACE_NORMAL, LBL_DEPTH, LBL_EDGE,
-    LBL_MESH_HIDDEN, LBL_MESH_VISIBLE,
-    LBL_EDGE_HIDDEN, LBL_EDGE_VISIBLE,
-    LBL_BFC_ON, LBL_BFC_OFF,
+    LBL_FACE_NORMAL, LBL_DEPTH, LBL_EDGE, LBL_OUTLINE,
     LBL_PT_CLOUD_RGB, LBL_PT_CLOUD_WHITE, LBL_PT_CLOUD_DEPTH,
-    LBL_PT_FOG_ON, LBL_PT_FOG_OFF,
+    id_style_label,
 )
 from process.scene.lighting import apply_lighting
 from process.plotter.state import restore_startup_mode
@@ -173,6 +170,18 @@ def register(p, trigger, set_mode):
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
 
+    def _toggle_id():
+        was_on = getattr(p, '_is_id', False)
+        apply_default_reset(p)
+        if not was_on:
+            p._is_id = True
+            label = id_style_label(getattr(p, '_id_style', 1))
+        else:
+            label = restore_startup_mode(p)
+        set_mode(label)
+        logger.info('Mode: %s', label or 'DEFAULT')
+        trigger()
+
     def _toggle_edge():
         was_on = getattr(p, '_is_edge', False)
         apply_default_reset(p)
@@ -188,99 +197,19 @@ def register(p, trigger, set_mode):
         logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
 
-    def _toggle_backface():
-        if getattr(p, '_n_faces', 1) == 0:
-            p._pt_fog_enabled = not getattr(p, '_pt_fog_enabled', False)
-            p._pt_fog_cache_key = None
-            p._pt_normal_color_key = None
-            p._prev_mode = None
-            if not p._pt_fog_enabled and (
-                getattr(p, '_pt_fog_gpu', None)
-                or getattr(p, '_depth_fog_gpu', None)
-            ):
-                try:
-                    sp = p._mesh_actor.GetShaderProperty()
-                    sp.ClearAllVertexShaderReplacements()
-                    sp.SetFragmentShaderCode('')
-                except AttributeError:
-                    pass
-                p._pt_fog_gpu = None
-                p._pt_fog_unif_key = None
-                p._pt_fog_color_key = None
-                p._depth_fog_gpu = None
-                p._depth_unif_key = None
-                p._depth_scalar_key = None
-                p._pt_shader_size = -1
-            label = LBL_PT_FOG_ON if p._pt_fog_enabled else LBL_PT_FOG_OFF
-            set_mode(label)
-            logger.info('Mode: %s', label)
-            trigger()
-            return
-        if getattr(p, '_is_wire', False):
-            p._wire_mesh_hidden = not getattr(
-                p, '_wire_mesh_hidden', False
-            )
-            if hasattr(p, '_mesh_actor'):
-                if p._wire_mesh_hidden:
-                    p._mesh_actor.VisibilityOff()
-                else:
-                    p._mesh_actor.VisibilityOn()
-            label = (
-                LBL_MESH_HIDDEN
-                if p._wire_mesh_hidden
-                else LBL_MESH_VISIBLE
-            )
-        elif getattr(p, '_is_vtx', False):
-            p._vtx_mesh_hidden = not getattr(
-                p, '_vtx_mesh_hidden', False
-            )
-            if hasattr(p, '_mesh_actor'):
-                if p._vtx_mesh_hidden:
-                    p._mesh_actor.VisibilityOff()
-                else:
-                    p._mesh_actor.VisibilityOn()
-            label = (
-                LBL_MESH_HIDDEN
-                if p._vtx_mesh_hidden
-                else LBL_MESH_VISIBLE
-            )
-        elif getattr(p, '_is_edge', False):
-            p._edge_mesh_hidden = not getattr(
-                p, '_edge_mesh_hidden', True
-            )
-            if hasattr(p, '_mesh_actor'):
-                if p._edge_mesh_hidden:
-                    p._mesh_actor.VisibilityOff()
-                else:
-                    p._mesh_actor.VisibilityOn()
-            label = (
-                LBL_EDGE_HIDDEN
-                if p._edge_mesh_hidden
-                else LBL_EDGE_VISIBLE
-            )
-        elif getattr(p, '_is_fnormal', False):
-            p._fnormal_mesh_hidden = not getattr(
-                p, '_fnormal_mesh_hidden', True
-            )
-            if hasattr(p, '_mesh_actor'):
-                if p._fnormal_mesh_hidden:
-                    p._mesh_actor.VisibilityOff()
-                else:
-                    p._mesh_actor.VisibilityOn()
-            label = (
-                LBL_MESH_HIDDEN
-                if p._fnormal_mesh_hidden
-                else LBL_MESH_VISIBLE
-            )
+    def _toggle_outline():
+        was_on = getattr(p, '_is_outline', False)
+        apply_default_reset(p)
+        if not was_on:
+            p._is_outline = True
+            p._outline_mesh_hidden = True
+            label = LBL_OUTLINE
         else:
-            p._is_backface = not p._is_backface
-            label = (
-                LBL_BFC_ON
-                if p._is_backface
-                else LBL_BFC_OFF
-            )
+            if hasattr(p, '_mesh_actor'):
+                p._mesh_actor.VisibilityOn()
+            label = restore_startup_mode(p)
         set_mode(label)
-        logger.info('Mode: %s', label)
+        logger.info('Mode: %s', label or 'DEFAULT')
         trigger()
 
     bind_key(p, KEY_ISO, _toggle_iso)
@@ -291,5 +220,6 @@ def register(p, trigger, set_mode):
     bind_key(p, KEY_VTX, _toggle_vtx)
     bind_key(p, KEY_FACE_NORMAL, _toggle_face_normal)
     bind_key(p, KEY_DEPTH, _toggle_depth)
+    bind_key(p, KEY_ID, _toggle_id)
     bind_key(p, KEY_EDGE, _toggle_edge)
-    bind_key(p, KEY_BACKFACE, _toggle_backface)
+    bind_key(p, KEY_OUTLINE, _toggle_outline)

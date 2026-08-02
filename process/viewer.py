@@ -18,11 +18,14 @@ from configs.settings import (
     AUDIO_COLOR_GRID, GRID_WIDTH,
     SHOW_GRID, AUDIO_ISO_AXIS, AUDIO_COLOR_AXIS,
     AUDIO_ISO_COUNT_DEFAULT, STARTUP_AUDIO_MODE,
-    STARTUP_CAM_DEGREE, STARTUP_CAM_POSITION, CAM_TRUCK_STEP,
+    STARTUP_CAM_AZIMUTH, STARTUP_CAM_ELEVATION,
+    STARTUP_TRUCK, STARTUP_PEDESTAL, STARTUP_DOLLY,
     SAVE_PBO_ENABLED, DISPLAY_SEQUENCE,
 )
 from configs.colorize import Msg
 from process.init import init_vtk, log_session_start  # noqa: F401
+from process.init.shutdown import graceful_shutdown
+from process.init.signals import set_shutdown_target
 from process.load import FrameBuffer, show_loading, hide_loading, detect_geometry_type
 from process.apply_mode import (  # noqa: F401
     apply_point_cloud_startup, _apply_axis_transform,
@@ -33,6 +36,7 @@ from process.plotter import (
     init_plotter_state,
     setup_camera as _setup_camera,
 )
+from process.camera.utils import apply_cam_transform
 from process.scene import (  # noqa: F401
     setup_scene, apply_lighting, setup_hdri, enable_hdri, init_actors,
     setup_axes_marker,
@@ -46,6 +50,8 @@ from process.overlay import (
 from process.overlay.hud_texts import update_colorbar
 from process.overlay.sequence import load_seq_files
 from process.render import render_loop
+from process.render.batch import run_batch
+from process.load.cache_policy import ALL_MODE_TOKEN
 from process.keymapping import apply_key_filter_style, register_callbacks
 from process.audio import WaterfallRenderer
 from process.mode.audio import exec_audio_viewer  # noqa: F401
@@ -54,6 +60,10 @@ logger = logging.getLogger(__name__)
 
 def load_files(obj_files: list, args) -> FrameBuffer:
     log_session_start(obj_files, args)
+
+    set_shutdown_target(
+        input_path=os.path.relpath(os.path.dirname(obj_files[0])),
+    )
     t = time.perf_counter()
     buffer = FrameBuffer(
         obj_files, args.smooth,
@@ -61,6 +71,7 @@ def load_files(obj_files: list, args) -> FrameBuffer:
         no_cache=args.no_cache,
     )
     logger.debug('FrameBuffer init: %.4fs', time.perf_counter() - t)
+    set_shutdown_target(buffer=buffer)
     if args.save:
         os.makedirs(args.save, exist_ok=True)
         logger.info('Save output dir: %s', args.save)
@@ -107,44 +118,19 @@ def setup_cam(plotter, buffer) -> None:
     if swap != 0 or any(reverse):
         mesh0 = _apply_axis_transform(mesh0, swap, reverse)
     _setup_camera(plotter, mesh0)
-    if STARTUP_CAM_DEGREE != 0:
-        cam = plotter.renderer.GetActiveCamera()
-        cam.Azimuth(STARTUP_CAM_DEGREE)
-        plotter.renderer.ResetCameraClippingRange()
-        plotter._init_cam_pos = plotter.camera_position
-    if STARTUP_CAM_POSITION is not None:
-        truck_dx, pedestal_dy, dolly_dz = STARTUP_CAM_POSITION
-        cam = plotter.renderer.GetActiveCamera()
-        dist = cam.GetDistance()
-        if abs(truck_dx) > 1e-8:
-            right = np.cross(
-                np.array(cam.GetDirectionOfProjection()),
-                np.array(cam.GetViewUp()),
-            )
-            n = np.linalg.norm(right)
-            if n > 1e-8:
-                offset = right / n * (dist * truck_dx)
-                cam.SetPosition(*(np.array(cam.GetPosition()) + offset))
-                cam.SetFocalPoint(*(np.array(cam.GetFocalPoint()) + offset))
-        if abs(pedestal_dy) > 1e-8:
-            up = np.array(cam.GetViewUp())
-            n = np.linalg.norm(up)
-            if n > 1e-8:
-                offset = up / n * (dist * pedestal_dy)
-                cam.SetPosition(*(np.array(cam.GetPosition()) + offset))
-                cam.SetFocalPoint(*(np.array(cam.GetFocalPoint()) + offset))
-        if abs(dolly_dz) > 1e-8:
-            view = np.array(cam.GetDirectionOfProjection())
-            n = np.linalg.norm(view)
-            if n > 1e-8:
-                offset = view / n * (dist * dolly_dz)
-                cam.SetPosition(*(np.array(cam.GetPosition()) + offset))
-        plotter.renderer.ResetCameraClippingRange()
-        plotter._init_cam_pos = plotter.camera_position
-        logger.debug(
-            'setup_cam: STARTUP_CAM_POSITION truck=%.4f pedestal=%.4f dolly=%.4f',
-            truck_dx, pedestal_dy, dolly_dz,
-        )
+    cam = plotter.renderer.GetActiveCamera()
+    apply_cam_transform(
+        plotter, cam,
+        STARTUP_CAM_AZIMUTH, STARTUP_CAM_ELEVATION,
+        STARTUP_TRUCK, STARTUP_PEDESTAL, STARTUP_DOLLY,
+    )
+    plotter._init_cam_pos = plotter.camera_position
+    logger.debug(
+        'setup_cam: azimuth=%.4f elevation=%.4f'
+        ' truck=%.4f pedestal=%.4f dolly=%.4f',
+        STARTUP_CAM_AZIMUTH, STARTUP_CAM_ELEVATION,
+        STARTUP_TRUCK, STARTUP_PEDESTAL, STARTUP_DOLLY,
+    )
 
 def build_scene(plotter) -> None:
     t = time.perf_counter()
@@ -251,18 +237,30 @@ def apply_hide_info(plotter) -> None:
     apply_overlay_visibility(plotter)
 
 def run_loop(plotter, buffer) -> None:
+
+    plotter._frame_buffer = buffer
+    set_shutdown_target(plotter=plotter)
     _t_shown = getattr(plotter, '_t_shown', None)
     if _t_shown is not None:
         logger.info(
             'Window->render_loop gap: %.3fs',
             time.perf_counter() - _t_shown,
         )
+    modes = getattr(plotter, '_batch_modes', None)
+
+    is_batch = bool(modes) and (
+        len(modes) > 1 or ALL_MODE_TOKEN in modes
+    )
     try:
-        render_loop(plotter, buffer)
+        if is_batch:
+            run_batch(plotter, buffer, modes)
+        else:
+            render_loop(plotter, buffer)
     except KeyboardInterrupt:
         pass
     finally:
-        buffer.cleanup()
+
+        graceful_shutdown(plotter, 'render_loop')
     logging.shutdown()
     os._exit(0)
 

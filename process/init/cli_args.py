@@ -10,6 +10,7 @@ from process.record import check_ffmpeg, is_video_ext, is_image_ext
 from process.load.cache_policy import set_no_normal, set_startup_mode
 from process.plotter.state import (
     MESH_STARTUP_MODES, PT_STARTUP_MODES, ALL_STARTUP_MODES,
+    ALL_MODE_TOKEN,
 )
 
 def validate_args(parser, args) -> None:
@@ -70,17 +71,25 @@ def _check_headless(parser, args) -> None:
 
 def _check_mode(parser, args) -> None:
 
+    args.modes = []
     if args.mode is not None:
-        args.mode = args.mode.strip().lower()
-        if args.mode not in ALL_STARTUP_MODES:
-            parser.error(
-                f'--mode must be one of\n'
-                f'  mesh       : {", ".join(sorted(MESH_STARTUP_MODES))}\n'
-                f'  pointcloud : {", ".join(sorted(PT_STARTUP_MODES))}\n'
-                f'got: {args.mode}'
-            )
 
-    set_startup_mode(args.mode)
+        args.modes = [
+            m.strip().lower() for m in args.mode.split(',') if m.strip()
+        ]
+        for mode in args.modes:
+
+            if mode not in ALL_STARTUP_MODES and mode != ALL_MODE_TOKEN:
+                parser.error(
+                    f'--mode must be one of\n'
+                    f'  mesh       : {", ".join(sorted(MESH_STARTUP_MODES))}\n'
+                    f'  pointcloud : {", ".join(sorted(PT_STARTUP_MODES))}\n'
+                    f'  every mode : {ALL_MODE_TOKEN}\n'
+                    f'got: {mode}'
+                )
+        args.mode = args.modes[0] if args.modes else None
+
+    set_startup_mode(args.modes or args.mode)
     set_no_normal(args.no_normal)
 
 def _check_save_encoder(parser, args) -> None:

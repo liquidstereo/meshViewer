@@ -14,14 +14,19 @@ from configs.settings import (
     NP_STARTUP_MODE_POINT_CLOUD,
     NP_CLOUD_SIZE_DEFAULT, NP_CLOUD_SIZE_POINT_WHITE, NP_CLOUD_SIZE_DEPTH,
     SAVE_EXT, SAVE_QUALITY,
+    DEFAULT_ID_STYLE,
     resolve_axis_settings,
 )
 from process.mode.labels import (
     SMOOTH_CYCLE_LABELS,
     LBL_PT_CLOUD_RGB, LBL_PT_CLOUD_WHITE, LBL_PT_CLOUD_DEPTH,
 )
+from process.plotter.mode_settings import (   # noqa: F401
+    ID_SHADERS, resolve_mode_axis, resolve_id_style,
+    resolve_id_shader, apply_mode_axes,
+)
 from process.load.cache_policy import (
-    effective_startup_mode, startup_mode_override,
+    ALL_MODE_TOKEN, effective_startup_mode, startup_mode_override,
 )
 
 _AXIS_SWAP_MAP = {'OFF': 0, 'YZ': 1, 'XZ': 2, 'XY': 3}
@@ -34,7 +39,9 @@ _STARTUP_FLAG_MAP = {
     'mesh_quality': '_is_mesh_quality',
     'face_normal':  '_is_fnormal',
     'depth':        '_is_depth',
+    'id':           '_is_id',
     'edge':         '_is_edge',
+    'outline':      '_is_outline',
     'vtx':          '_is_vtx',
 }
 
@@ -52,6 +59,20 @@ MESH_STARTUP_MODES = frozenset(_STARTUP_FLAG_MAP) | frozenset(
 ) | {'default'}
 PT_STARTUP_MODES = frozenset({'point_rgb', 'point_white', 'depth'})
 ALL_STARTUP_MODES = MESH_STARTUP_MODES | PT_STARTUP_MODES
+
+ALL_MODE_ORDER = (
+    'default', 'wire', 'edge', 'outline', 'normal_color',
+    'mesh_quality', 'depth', 'id', 'face_normal', 'vtx', 'isoline',
+    'pbr_tex.tex', 'pbr_tex.pbr', 'pbr_tex',
+)
+ALL_MODE_ORDER_PC = ('point_rgb', 'point_white', 'depth')
+
+ALL_MODE_EXCLUDE = frozenset({'smooth'})
+
+def expand_all_modes(is_point_cloud: bool) -> list:
+    order = ALL_MODE_ORDER_PC if is_point_cloud else ALL_MODE_ORDER
+    allowed = valid_modes_for(is_point_cloud) - ALL_MODE_EXCLUDE
+    return [mode for mode in order if mode in allowed]
 
 def valid_modes_for(is_point_cloud: bool) -> frozenset:
     return PT_STARTUP_MODES if is_point_cloud else MESH_STARTUP_MODES
@@ -157,6 +178,10 @@ def init_plotter_state(plotter, args) -> None:
     plotter._save_path = args.save or None
     plotter._save_dir = args.save or None
     plotter._save_loop = args.continuous
+
+    plotter._batch_modes = list(getattr(args, 'modes', None) or [])
+    plotter._batch_active = False
+    plotter._batch_last = True
     plotter._headless = getattr(args, 'headless', False)
     plotter._save_counter = 0
     plotter._save_ext = getattr(args, 'format', SAVE_EXT)
@@ -171,7 +196,6 @@ def init_plotter_state(plotter, args) -> None:
     plotter._is_smooth_shading = args.smooth
     plotter._is_wire = False
     plotter._wire_mesh_hidden = True
-    plotter._wire_axis = 3
     plotter._wire_visible = False
     plotter._is_tex = args.texture
     plotter._is_grid = SHOW_GRID
@@ -186,18 +210,24 @@ def init_plotter_state(plotter, args) -> None:
     plotter._is_normal_color = False
     plotter._is_mesh_quality = False
     plotter._is_depth = False
-    plotter._depth_axis = 3
+    plotter._is_id = False
+    plotter._id_region_key = None
+    plotter._id_colors = None
+    plotter._id_region_count = 0
+    plotter._id_style = resolve_id_style(DEFAULT_ID_STYLE)
     plotter._is_vtx = False
     plotter._vtx_spatial_interval = VTX_SPATIAL_INTERVAL
     plotter._is_fnormal = False
     plotter._fnormal_mesh_hidden = True
-    plotter._fnormal_axis = 3
     plotter._is_edge = False
     plotter._edge_visible = False
     plotter._edge_mesh_hidden = False
+    plotter._is_outline = False
+    plotter._outline_visible = False
+    plotter._outline_mesh_hidden = True
     plotter._edge_feature_angle = EDGE_FEATURE_ANGLE
     plotter._iso_count = ISO_COUNT_DEFAULT
-    plotter._iso_axis = 3
+    apply_mode_axes(plotter)
     plotter._reduction_mesh = REDUCTION_MESH
     plotter._rot_elev = 0.0
     plotter._is_turntable = SHOW_TURNTABLE

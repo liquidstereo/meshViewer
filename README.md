@@ -19,6 +19,21 @@ An interactive 3D mesh viewer built on OpenGL with support for static meshes, fr
   `False` skips actor creation, so the matching toggle key stays inert.
 - **Startup render mode** - `-m` overrides the settings file per input
   type. `STARTUP_MODE` is the single source of truth at launch.
+- **ID and Outline modes** - `0` paints every connected mesh in its own
+  color, `PgUp` / `PgDn` cycling `ID (Flat)` and `ID (Shaded)`;
+  `DEFAULT_ID_STYLE` picks the one the viewer starts in and
+  `DEFAULT_ID_SHADER` picks the shading. `1` draws the same ID colors as
+  a silhouette outline. Both are mesh only.
+- **Orthographic views** - `F1`-`F6` always switch to parallel
+  projection, so front and side views stay measurable regardless of the
+  current `c` projection state.
+- **Graceful shutdown** - `Ctrl+C` in the terminal releases the render
+  window, video sink, and worker threads through the same path as
+  `Escape`; a save in progress is closed before exit.
+- **Batch render** - pass several modes to `-m` as a comma separated list
+  to play and save them one after another. Every mode starts from the
+  same camera and frame index, and `SAVE_MODE_FILENAME` keeps the outputs
+  in separate files. Works the same way with `--headless`.
 - **NumPy playback** - `.npy` / `.npz` single files and sequences.
   `(N, 3)`, `(N, 6)` and `(H, W)` shapes are detected automatically;
   `DATA_NORMALIZE*` rescales skewed depth ranges.
@@ -72,6 +87,9 @@ MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio vis
 
 - [Python 3.10+](https://www.python.org/downloads/)
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html) (required — VTK must be installed via conda-forge, not pip)
+- [ffmpeg](https://ffmpeg.org/download.html) — required for `mp4` / `mov`
+  output only (`conda install -c conda-forge ffmpeg`). Without it, use
+  `-f png`.
 - **Linux is strongly recommended.** MeshViewer is built and tested on
   Linux. Other platforms are untested, and the OpenGL/VTK paths in
   particular are known to behave differently.
@@ -163,6 +181,10 @@ python meshViewer.py -i character --hide-info -v
 python meshViewer.py -i character -m isoline
 python meshViewer.py -i pointcloud_seq -m point_white
 
+# Batch render - one output per mode, in the given order
+python meshViewer.py -i character -m 'mesh_quality, default, vtx' -s
+python meshViewer.py -i character -m 'isoline, wire' -s --headless
+
 # Build the cache without point normals (smaller cache)
 python meshViewer.py -i character --no-normal
 ```
@@ -176,7 +198,7 @@ python meshViewer.py -i character --no-normal
 | `-s` | `--save` | Capture save path (omit value → `output/<name>` auto-set) | `None` |
 | `-f` | `--format` | Output format: `mp4`, `mov`, `png`, `jpg` | `SAVE_EXT` (`mp4`) |
 | `-q` | `--quality` | Video quality: `low`, `high`, `raw` (video only) | `SAVE_QUALITY` (`high`) |
-| `-m` | `--mode` | Startup render mode; overrides the settings file | `STARTUP_MODE` |
+| `-m` | `--mode` | Startup render mode, or a comma separated list to batch render | `STARTUP_MODE` |
 | `-c` | `--continuous` | Accumulate capture index across loops (use with `-s`) | `False` |
 | `-r` | `--range` | Playback frame range `START-END` (e.g. `0-500`) | `None` |
 | `-v` | `--verbose` | Set log level to DEBUG | `False` |
@@ -188,9 +210,21 @@ python meshViewer.py -i character --no-normal
 
 `-m` accepts, for meshes: `default`, `wire`, `smooth`, `isoline`,
 `normal_color`, `mesh_quality`, `face_normal`, `depth`, `edge`, `vtx`,
-`pbr_tex.tex`, `pbr_tex.pbr`, `pbr_tex`; for point clouds: `point_rgb`,
-`point_white`, `depth`. A mode that does not apply to the loaded input is
-ignored with a warning.
+`id`, `outline`, `pbr_tex.tex`, `pbr_tex.pbr`, `pbr_tex`; for point
+clouds: `point_rgb`, `point_white`, `depth`. A mode that does not apply
+to the loaded input is ignored with a warning.
+
+Passing several modes as a comma separated list renders them one after
+another in a single run, and `all` expands to every mode valid for the
+loaded input type. Each mode starts from the same camera and frame
+index, so the outputs stay comparable; with `-s`, `SAVE_MODE_FILENAME`
+appends the mode name so the files do not overwrite each other. Batch
+rendering works the same way under `--headless`.
+
+```bash
+python meshViewer.py -i mesh_dir -m wire,outline,id -s
+python meshViewer.py -i mesh_dir -m all -s --headless
+```
 
 ## Input Directory Structure
 
@@ -257,8 +291,8 @@ The tables below are generated from the shipped settings files at build time.
 
 | Setting | Default |
 |---|---|
-| Width × Height | 1024 × 1024 |
-| Aspect ratio | 1.0 |
+| Width × Height | 1080 × 1610 |
+| Aspect ratio | 1.49074 |
 | MSAA samples | 8 |
 | FXAA | off |
 | Monitor index | 0 |
@@ -268,6 +302,8 @@ The tables below are generated from the shipped settings files at build time.
 | Setting | Default |
 |---|---|
 | Startup render mode | `default` |
+| Startup ID style | `shaded` |
+| ID shading | `default` |
 | Animation | on |
 | Target FPS | 30 |
 | Frame buffer size | RAM-dependent |
@@ -278,13 +314,13 @@ The tables below are generated from the shipped settings files at build time.
 
 | Setting | Default |
 |---|---|
-| Grid | on |
-| Bounding box | on |
-| Backface culling | on |
-| Additional lighting | off |
-| Turntable auto-rotation | on |
+| Grid | off |
+| Bounding box | off |
+| Backface culling | off |
+| Additional lighting | on |
+| Turntable auto-rotation | off |
 | Colorbar | on |
-| HDRI IBL | off |
+| HDRI IBL | on |
 
 **Overlays**
 
@@ -302,6 +338,8 @@ key stays inert.
 | `DISPLAY_HELP` | Help overlay | `h` |
 | `DISPLAY_SEQUENCE` | Image sequence overlay | `'` |
 | `DISPLAY_AXES` | Orientation axes marker | — |
+| `DISPLAY_CAM_DETAILS` | Camera detail lines in the status text | — |
+| `DISPLAY_SEQ_ROUND` | Rounded corners on the sequence overlay | — |
 
 Use `--hide-info` (or `SHOW_HIDE_INFO`) instead when the overlays should
 merely start hidden and stay toggleable with `/`.
@@ -319,6 +357,7 @@ merely start hidden and stay toggleable with `/`.
 | `↑` / `↓` | Jump to first / last frame |
 | `BackSpace` | Full reset (mode, camera, state) |
 | `Escape` | Quit |
+| `Ctrl+C` | Quit from the terminal; shuts down the same way as `Escape` |
 
 ### Camera
 
@@ -327,7 +366,7 @@ merely start hidden and stay toggleable with `/`.
 | `r` / `KP_0` | Camera reset |
 | `KP_5` | Center focal point on mesh |
 | `c` | Parallel ↔ Perspective projection |
-| `F1`–`F6` | Front / Back / Left / Right / Top / Bottom view |
+| `F1`–`F6` | Front / Back / Left / Right / Top / Bottom orthographic view |
 | `Tab` | Mesh axis swap cycle (OFF → Y↔Z → X↔Z → X↔Y) |
 | `KP_7` / `KP_9` | Zoom in / out |
 | `KP_1` / `KP_3` | Dolly in / out |
@@ -347,19 +386,26 @@ merely start hidden and stay toggleable with `/`.
 | `3` | Wireframe | Normal-based colormap over wire mesh |
 | `5` | Isoline | Contour lines on selectable axis |
 | `6` | Normal Color | Surface normal direction → RGB |
-| `7` | Mesh Quality | Scaled Jacobian metric colormap |
+| `7` | Mesh Quality | Aspect ratio metric colormap (green = good) |
 | `8` | Face Normal | Face normal glyph arrows |
 | `9` | Depth | Camera-distance colormap |
+| `0` | ID Color | Distinct color per connected mesh. `PgUp` / `PgDn` cycles ID (Flat) and ID (Shaded) |
+| `1` | Outline | Silhouette outline in ID color. `b` shows the body again. Mesh only |
 | `e` | Edge Extract | Feature angle-based edge lines |
 | `2` | Vertex Label | Sparse vertex coordinate labels |
 | `d` | Reduction | Mesh decimation (PBR lighting off) |
+
+Both ID modes are mesh only; point cloud input rejects them. `ID (Flat)`
+ignores lighting and paints a solid color per connected mesh, while
+`ID (Shaded)` applies the shader named by `DEFAULT_ID_SHADER`. The style
+the viewer starts in comes from `DEFAULT_ID_STYLE`.
 
 ### Scene & Overlays
 
 | Key | Action |
 |---|---|
-| `` ` `` | Save screenshot |
-| `1` | Grid + BBox toggle |
+| `F10` | Save screenshot |
+| `` ` `` | Grid + BBox toggle |
 | `;` | Grid only toggle |
 | `b` | Backface culling / mesh occluder toggle |
 | `F11` | Theme toggle (black ↔ white) |

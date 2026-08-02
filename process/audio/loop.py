@@ -42,6 +42,9 @@ def run_audio_loop(
     )
     ctx.monitor_ctx[1].start()
 
+    plotter._blink_stop_event = ctx.monitor_ctx[0]
+    plotter._blink_thread_ref = ctx.monitor_ctx[1]
+
     ctx.executor = (
         ThreadPoolExecutor(max_workers=SAVE_ENCODE_WORKERS)
         if ctx.is_recording else None

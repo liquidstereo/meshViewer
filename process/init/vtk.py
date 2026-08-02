@@ -34,7 +34,7 @@ class _VtkLogOutputWindow(vtk.vtkOutputWindow):
 
 def init_vtk() -> None:
 
-    print('\u2014')
+    Msg.Divider()
     Msg.Dim(f'Processing\u2026 Please Wait\u2026', flush=True)
 
     global _vtk_output_window_instance

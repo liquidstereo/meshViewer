@@ -20,8 +20,13 @@ def apply_default_reset(p) -> None:
     p._is_normal_color = False
     p._is_mesh_quality = False
     p._is_depth = False
+
+    p._is_id = False
     p._is_edge = False
     p._edge_mesh_hidden = False
+    p._is_outline = False
+
+    p._outline_mesh_hidden = True
     p._is_vtx = False
     if hasattr(p, '_vtx_label_actor'):
         _hide_vtx(p)

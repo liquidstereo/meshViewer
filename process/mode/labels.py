@@ -7,6 +7,14 @@ LBL_VERTICES        = 'VERTICES (SPATIAL.INTV)'
 LBL_FACE_NORMAL     = 'FACE.NORM'
 LBL_DEPTH           = 'DEPTH'
 LBL_EDGE            = 'EDGE.EXTRACT'
+LBL_ID              = 'ID.COLOR'
+
+ID_STYLE_NAMES      = ('Flat', 'Shaded')
+FMT_ID_STYLE        = 'ID ({})'
+
+def id_style_label(index: int) -> str:
+    return FMT_ID_STYLE.format(ID_STYLE_NAMES[index % len(ID_STYLE_NAMES)])
+LBL_OUTLINE         = 'OUTLINE (ID.COLOR)'
 LBL_SURF_SMOOTHING  = 'SURF.SMOOTHING'
 
 SMOOTH_CYCLE_LABELS = (

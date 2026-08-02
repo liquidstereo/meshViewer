@@ -33,6 +33,9 @@ def apply_mesh_quality(p, mesh):
     )
 
     mapper.ScalarVisibilityOn()
+
+    mapper.SetScalarModeToUsePointData()
+    mapper.SetColorModeToMapScalars()
     mapper.SetLookupTable(p._quality_lut)
     mapper.SetScalarRange(*q_range)
     p._cmap_lut = p._quality_lut

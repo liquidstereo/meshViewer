@@ -50,6 +50,10 @@ def setup_camera(plotter, mesh0) -> None:
         )
     plotter._init_parallel_scale = cam.GetParallelScale()
     plotter._init_view_angle = cam.GetViewAngle()
+
+    plotter._init_parallel_proj = bool(cam.GetParallelProjection())
+
+    plotter._init_focal_dist = cam.GetDistance()
     plotter.set_background(COLOR_BG)
     logger.debug(
         'setup_camera: scale=%.4f center=%s', s, plotter._norm_center

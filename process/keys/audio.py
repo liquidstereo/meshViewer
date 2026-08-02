@@ -39,11 +39,13 @@ from process.mode.labels import (
 )
 from process.scene.lighting import apply_lighting
 from process.keys.reset import register_cam_pan
+from process.camera.utils import set_parallel_projection
 from process.keys import dispatch_key
 from process.window.display import save_screenshot
 from process.window.toggle_info import toggle_info_overlay
 from process.overlay.hud_texts import update_colorbar
 from process.init.session_log import log_session_end
+from process.init.shutdown import graceful_shutdown
 from process.audio.state import AudioContext
 
 logger = logging.getLogger(__name__)
@@ -199,18 +201,18 @@ def register_audio_keys(
                 renderer.bbox_actor.VisibilityOff()
 
     def _force_exit() -> None:
+
         renderer.keep_running = False
         if ctx.monitor_ctx[0] is not None:
             ctx.monitor_ctx[0].set()
             ctx.monitor_ctx[1].join(timeout=2.0)
-        sysinfo_stop = getattr(plotter, '_sysinfo_stop', None)
-        if sysinfo_stop is not None:
-            sysinfo_stop.set()
         if ctx.executor is not None:
             logger.info(
                 'Finalizing audio recording: %s', ctx.record_dir
             )
             ctx.executor.shutdown(wait=True)
+
+        graceful_shutdown(plotter, 'audio')
         log_path = os.path.join(
             LOG_DIR, f'{ctx.base_name}.log'
         )
@@ -233,10 +235,7 @@ def register_audio_keys(
             f'Please refer to the log file for details.'
             f' ({log_path})'
         )
-        try:
-            plotter.close()
-        finally:
-            os._exit(0)
+        os._exit(0)
 
     _UNSUPPORTED = {
         KEY_VTX: 'VERTEX.LABEL',
@@ -397,7 +396,9 @@ def register_audio_keys(
     plotter.add_key_event(KEY_ROT_YR, cam_cbs['rot_yr'])
     plotter.add_key_event(KEY_ROT_XD, cam_cbs['rot_xd'])
     plotter.add_key_event(KEY_ROT_XU, cam_cbs['rot_xu'])
-    plotter.add_key_event(KEY_SCREENSHOT, _screenshot)
+    dispatch_key(
+        plotter._special_key_dispatch, KEY_SCREENSHOT, _screenshot
+    )
     plotter.add_key_event(KEY_OVERLAY, _toggle_overlay)
     plotter.add_key_event(KEY_BACKFACE, _toggle_backface)
     plotter.add_key_event(KEY_GRID, _toggle_grid_bbox)
@@ -461,6 +462,7 @@ def register_audio_keys(
         dist = cam.GetDistance()
         cam.SetPosition(*(fp + np.array(direction) * dist))
         cam.SetViewUp(*viewup)
+        set_parallel_projection(plotter, cam, True)
         plotter.renderer.ResetCamera()
         set_mode_msg(label)
         plotter.render()

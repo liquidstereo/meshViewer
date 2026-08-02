@@ -1,8 +1,8 @@
-from configs.theme import apply_theme as _apply_theme
+from configs.settings_theme import apply_theme as _apply_theme
 from configs.settings_font import _set_fontsize
 
 HDRI_PATH   = './assets/hdri/pav_studio_03_4k.hdr'
-HDRI_ENABLE = False
+HDRI_ENABLE = True
 
 COLOR_MESH_DEFAULT  = _apply_theme('#FFFFFF')
 COLOR_MESH_ISO      = _apply_theme('#FFFC55')
@@ -43,6 +43,11 @@ ISOLINE_DECIMATE_SEQUENCE = False
 
 OFFSET_MESH_BACK    = (0.0, 8.0)
 
+ISO_AXIS_DEFAULT      = 'CAM'
+WIRE_AXIS_DEFAULT     = 'CAM'
+FNORMAL_AXIS_DEFAULT  = 'CAM'
+DEPTH_AXIS_DEFAULT    = 'CAM'
+
 COLOR_ISO_LINE      = 'plasma'
 WIDTH_ISO_LINE      = 2.5
 TYPE_TUBE           = False
@@ -59,8 +64,25 @@ WIDTH_EDGE              = 1.0
 EDGE_FEATURE_ANGLE      = 13.5
 EDGE_FEATURE_ANGLE_STEP = 2.5
 
+ID_COLOR_PALETTE = (
+    '#e6194b', '#3cb44b', '#ffe119', '#4363d8',
+    '#f58231', '#911eb4', '#46f0f0', '#f032e6',
+    '#bcf60c', '#fabebe', '#008080', '#9a6324',
+)
+
+DEFAULT_ID_STYLE  = 'shaded'
+
+DEFAULT_ID_SHADER = 'default'
+
+WIDTH_OUTLINE            = 2.0
+
+OUTLINE_FEATURE_ENABLE   = False
+OUTLINE_FEATURE_ANGLE    = 60.0
+
+OUTLINE_BORDER_EDGES     = True
+
 MESH_DEPTH_COLOR      = 'twilight'
-DEPTH_AXIS_DEFAULT    = 3
+
 DEPTH_SHADING_FLAT    = True
 DEPTH_ENABLE_LIGHTING = False
 
@@ -76,8 +98,9 @@ FNORMAL_SHAFT_RADIUS        = 0.03
 FNORMAL_TIP_RESOLUTION      = 6
 FNORMAL_SHAFT_RESOLUTION    = 4
 
-COLOR_MESH_QUALITY  = 'RdYlGn'
-MESH_QUALITY_METRIC = 'scaled_jacobian'
+COLOR_MESH_QUALITY  = 'RdYlGn_r'
+
+MESH_QUALITY_METRIC = 'aspect_ratio'
 
 VTX_SPATIAL_INTERVAL    = 0.04
 VTX_SPATIAL_STEP        = 0.005

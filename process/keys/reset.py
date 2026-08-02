@@ -9,9 +9,9 @@ from configs.settings import (
     ISO_COUNT_DEFAULT, REDUCTION_MESH,
     EDGE_FEATURE_ANGLE, VTX_SPATIAL_INTERVAL,
     OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR, SCREENSHOT_EXT,
-    CAM_ZOOM_STEP, CAM_TRUCK_STEP,
+    CAM_ZOOM_STEP, CAM_TRUCK_STEP, DEFAULT_ID_STYLE,
 )
-import configs.theme as _theme_mod
+import configs.settings_theme as _theme_mod
 
 from configs.keybinding import (
     TURNTABLE_ROT_STEP,
@@ -43,11 +43,16 @@ from process.mode.labels import (
     AXIS_SWAP_NAMES, FMT_AXIS_SWAP,
 )
 from process.init.exit_summary import emit_exit_summary, finalize_logs
+from process.init.shutdown import graceful_shutdown
 from process.scene.grid import setup_grid
 from process.window.display import save_screenshot
 from process.mode.default import apply_default_reset
+from process.plotter.state import apply_mode_axes, resolve_id_style
 from process.scene.lighting import apply_lighting
 from process.window.toggle_info import toggle_info_overlay
+from process.camera.utils import (
+    restore_initial_camera, set_parallel_projection,
+)
 from process.keys import bind_key, dispatch_key
 
 logger = logging.getLogger(__name__)
@@ -195,15 +200,18 @@ def register(p, trigger, set_mode, total_len):
         p._quality_cache_range = None
         p._quality_vtk_poly = None
         p._is_depth = False
-        p._depth_axis = 3
+        p._is_id = False
+        p._id_region_key = None
+        p._id_colors = None
+        p._id_region_count = 0
+        p._id_style = resolve_id_style(DEFAULT_ID_STYLE)
         p._is_vtx = False
         p._vtx_spatial_interval = VTX_SPATIAL_INTERVAL
         p._is_fnormal = False
         p._fnormal_mesh_hidden = True
         p._iso_count = ISO_COUNT_DEFAULT
-        p._iso_axis = 3
-        p._wire_axis = 3
-        p._fnormal_axis = 3
+
+        apply_mode_axes(p)
         p._reduction_mesh = REDUCTION_MESH
         p._prev_mode = None
         p._rot_elev = 0.0
@@ -218,9 +226,14 @@ def register(p, trigger, set_mode, total_len):
             p._wire_actor.VisibilityOff()
         if hasattr(p, '_edge_actor'):
             p._edge_actor.VisibilityOff()
+        if hasattr(p, '_outline_actor'):
+            p._outline_actor.VisibilityOff()
         p._is_edge = False
         p._edge_visible = False
         p._edge_mesh_hidden = False
+        p._is_outline = False
+        p._outline_visible = False
+        p._outline_mesh_hidden = True
         p._edge_feature_angle = EDGE_FEATURE_ANGLE
         p._wire_mesh_hidden = True
         if hasattr(p, '_fnormal_actor'):
@@ -246,6 +259,8 @@ def register(p, trigger, set_mode, total_len):
         if hasattr(p, '_init_cam_pos'):
             p.camera_position = p._init_cam_pos
         cam = p.renderer.GetActiveCamera()
+        if hasattr(p, '_init_parallel_proj'):
+            set_parallel_projection(p, cam, p._init_parallel_proj)
         if hasattr(p, '_init_parallel_scale'):
             cam.SetParallelScale(p._init_parallel_scale)
         if hasattr(p, '_init_view_angle'):
@@ -253,16 +268,7 @@ def register(p, trigger, set_mode, total_len):
         trigger()
 
     def _reset_camera():
-        if hasattr(p, '_init_cam_pos'):
-            p.camera_position = p._init_cam_pos
-        cam = p.renderer.GetActiveCamera()
-        if hasattr(p, '_init_parallel_scale'):
-            cam.SetParallelScale(p._init_parallel_scale)
-        if hasattr(p, '_init_view_angle'):
-            cam.SetViewAngle(p._init_view_angle)
-        p._rot_elev = 0.0
-        p._current_view = None
-        p.renderer.ResetCameraClippingRange()
+        restore_initial_camera(p)
         trigger()
 
     def _center_view():
@@ -385,7 +391,7 @@ def register(p, trigger, set_mode, total_len):
     def _toggle_cam_proj():
         cam = p.renderer.GetActiveCamera()
         is_parallel = cam.GetParallelProjection()
-        cam.SetParallelProjection(not is_parallel)
+        set_parallel_projection(p, cam, not is_parallel)
         label = LBL_CAM_PARALLEL if not is_parallel else LBL_CAM_PERSPECTIVE
         set_mode(label)
         trigger()
@@ -410,7 +416,7 @@ def register(p, trigger, set_mode, total_len):
         overlay.set_visible(visible)
         trigger()
 
-    bind_key(p, KEY_SCREENSHOT, _take_screenshot)
+    dispatch_key(p._special_key_dispatch, KEY_SCREENSHOT, _take_screenshot)
     bind_key(p, KEY_CAM_PROJ, _toggle_cam_proj)
     bind_key(p, KEY_OVERLAY, _toggle_overlay)
     bind_key(p, KEY_LOG_OVERLAY, _toggle_log_overlay)
@@ -456,6 +462,7 @@ def register(p, trigger, set_mode, total_len):
         dist = cam.GetDistance()
         cam.SetPosition(*(fp + np.array(direction) * dist))
         cam.SetViewUp(*viewup)
+        set_parallel_projection(p, cam, True)
         p.renderer.ResetCamera()
         p._current_view = label
         set_mode(label)
@@ -464,8 +471,8 @@ def register(p, trigger, set_mode, total_len):
     def _cycle_actor():
         _CYCLE_ATTRS = (
             '_mesh_actor', '_iso_actor', '_wire_actor',
-            '_edge_actor', '_bbox_actor', '_vtx_point_actor',
-            '_fnormal_actor', '_vtx_sel_actor',
+            '_edge_actor', '_outline_actor', '_bbox_actor',
+            '_vtx_point_actor', '_fnormal_actor', '_vtx_sel_actor',
         )
         actor_list = [
             getattr(p, attr) for attr in _CYCLE_ATTRS
@@ -554,34 +561,21 @@ def register(p, trigger, set_mode, total_len):
 
     def _force_exit():
 
-        blink_stop = getattr(p, '_blink_stop_event', None)
-        if blink_stop is not None:
-            blink_stop.set()
-            blink_thread = getattr(p, '_blink_thread_ref', None)
-            if blink_thread is not None:
-                blink_thread.join(timeout=2.0)
+        graceful_shutdown(p, 'esc')
+
+        input_name = getattr(p, '_input_name', '?')
+        total = getattr(p, '_total', 0)
+        save_counter = getattr(p, '_save_counter', 0)
+        finalize_logs(
+            input_name, total, getattr(p, '_start_time', None),
+            save_counter, getattr(p, '_save_path', None),
+        )
 
         save_sink = getattr(p, '_save_sink', None)
         sink_target = (
             save_sink.display_target if save_sink is not None else None
         )
-        if save_sink is not None:
-            save_sink.close()
-            p._save_sink = None
-
-        input_name = getattr(p, '_input_name', '?')
-        total = getattr(p, '_total', 0)
-        start_t = getattr(p, '_start_time', None)
-        save_counter = getattr(p, '_save_counter', 0)
-        save_path_val = getattr(p, '_save_path', None)
-        finalize_logs(
-            input_name, total, start_t, save_counter, save_path_val,
-        )
-
         emit_exit_summary(input_name, total, save_counter, sink_target)
-        try:
-            p.close()
-        finally:
-            os._exit(0)
+        os._exit(0)
 
     p.add_key_event('Escape', _force_exit)

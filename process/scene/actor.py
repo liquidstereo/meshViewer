@@ -10,6 +10,7 @@ from configs.settings import (
     OFFSET_MESH_BACK,
     COLOR_MESH_QUALITY, MESH_DEPTH_COLOR, PT_CLOUD_DEPTH_COLOR,
     EDGE_FEATURE_ANGLE, COLOR_EDGE, WIDTH_EDGE,
+    WIDTH_OUTLINE,
     COLOR_BBOX, BBOX_WIDTH,
     VTX_LABEL_COLOR,
     VTX_POINT_COLOR, VTX_POINT_SIZE,
@@ -104,6 +105,29 @@ def _init_edge_actor(plotter) -> None:
     plotter._edge_filter = edge_filter
     plotter._edge_mapper = edge_mapper
     plotter._edge_actor = edge_actor
+
+def _init_outline_actor(plotter) -> None:
+    sil = vtk.vtkPolyDataSilhouette()
+    sil.SetInputData(vtk.vtkPolyData())
+    sil.SetCamera(plotter.renderer.GetActiveCamera())
+    sil.SetDirectionToCameraOrigin()
+    outline_mapper = vtk.vtkPolyDataMapper()
+    outline_mapper.SetInputData(vtk.vtkPolyData())
+
+    outline_mapper.SetResolveCoincidentTopologyToPolygonOffset()
+    outline_mapper.SetRelativeCoincidentTopologyLineOffsetParameters(
+        -1.0, -1.0
+    )
+    outline_actor = vtk.vtkActor()
+    outline_actor.SetMapper(outline_mapper)
+    outline_prop = outline_actor.GetProperty()
+    outline_prop.SetLineWidth(WIDTH_OUTLINE)
+    outline_prop.SetRenderLinesAsTubes(int(TYPE_TUBE))
+    outline_actor.VisibilityOff()
+    plotter.renderer.AddActor(outline_actor)
+    plotter._outline_sil = sil
+    plotter._outline_mapper = outline_mapper
+    plotter._outline_actor = outline_actor
 
 def _init_bbox_actor(plotter) -> None:
     bounds = getattr(plotter, '_norm_bounds', (-1, 1, -1, 1, -1, 1))
@@ -244,6 +268,7 @@ def init_render_actor(plotter):
     t0 = time.perf_counter()
     _init_mesh_iso_wire_actors(plotter)
     _init_edge_actor(plotter)
+    _init_outline_actor(plotter)
     _init_bbox_actor(plotter)
     _init_vtx_actors(plotter)
     _init_fnormal_actor(plotter)
@@ -258,7 +283,8 @@ def init_actors(plotter) -> None:
     cx, cy, cz = plotter._norm_center
     s = plotter._norm_scale
     for actor in (
-        plotter._mesh_actor, plotter._wire_actor, plotter._edge_actor
+        plotter._mesh_actor, plotter._wire_actor, plotter._edge_actor,
+        plotter._outline_actor,
     ):
         actor.SetOrigin(cx, cy, cz)
         actor.SetScale(s, s, s)

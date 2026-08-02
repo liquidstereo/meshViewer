@@ -36,6 +36,11 @@ def apply_normal_color(p, mesh):
     prop.SetLighting(NORMAL_COLOR_ENABLE_LIGHTING)
     prop.SetRepresentationToSurface()
     prop.EdgeVisibilityOff()
+
+    if getattr(p, '_is_smooth_shading', False):
+        prop.SetInterpolationToPhong()
+    else:
+        prop.SetInterpolationToFlat()
     is_backface = getattr(p, '_is_backface', True)
     if is_backface:
         prop.BackfaceCullingOn()

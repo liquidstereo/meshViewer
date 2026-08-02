@@ -2,6 +2,8 @@ import os
 
 from alive_progress import alive_bar
 
+from configs.colorize import Msg
+
 def load_audio_data(
     audio_path: str,
     start: float,
@@ -21,4 +23,6 @@ def load_audio_data(
     ) as bar:
         result = prepare_audio_data(audio_path, start, end, fps, bar=bar)
         bar.title = 'AUDIO PROCESSING COMPLETE'
+
+    Msg.mark_dirty()
     return result

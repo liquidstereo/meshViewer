@@ -5,9 +5,9 @@ from configs.keybinding import (
     KEY_HELP, KEY_EDGE,
     KEY_CAM_RESET, KEY_CENTER_VIEW, KEY_CAM_PROJ, KEY_LIGHT,
     KEY_SCREENSHOT, KEY_GRID,
-    KEY_VTX, KEY_WIRE, KEY_ISO,
+    KEY_OUTLINE, KEY_VTX, KEY_WIRE, KEY_ISO,
     KEY_NORMAL_COLOR, KEY_MESH_QUALITY,
-    KEY_FACE_NORMAL, KEY_DEPTH,
+    KEY_FACE_NORMAL, KEY_DEPTH, KEY_ID,
     KEY_BACKFACE, KEY_ACTOR_NEXT, KEY_AXIS_SWAP,
     KEY_VIEW_FRONT, KEY_VIEW_BACK,
     KEY_VIEW_SIDE_L, KEY_VIEW_SIDE_R,
@@ -18,7 +18,9 @@ from configs.keybinding import (
     KEY_INC, KEY_DEC,
     KEY_LOG_OVERLAY, KEY_STATUS_TEXT, KEY_SEQ_OVERLAY,
 )
-from process.keys import reset, smooth, modes, axis, vtx_pick
+from process.keys import (
+    reset, smooth, modes, axis, vtx_pick, backface,
+)
 
 def _make_blocked(*keys) -> frozenset:
     result = set()
@@ -34,9 +36,9 @@ _BLOCKED_KEYS = _make_blocked(
     KEY_HELP, KEY_EDGE,
     KEY_CAM_RESET, KEY_CENTER_VIEW, KEY_CAM_PROJ, KEY_LIGHT,
     KEY_SCREENSHOT, KEY_GRID,
-    KEY_VTX, KEY_WIRE, KEY_ISO,
+    KEY_OUTLINE, KEY_VTX, KEY_WIRE, KEY_ISO,
     KEY_NORMAL_COLOR, KEY_MESH_QUALITY,
-    KEY_FACE_NORMAL, KEY_DEPTH,
+    KEY_FACE_NORMAL, KEY_DEPTH, KEY_ID,
     KEY_BACKFACE, KEY_ACTOR_NEXT, KEY_AXIS_SWAP,
     KEY_VIEW_FRONT, KEY_VIEW_BACK,
     KEY_VIEW_SIDE_L, KEY_VIEW_SIDE_R,
@@ -85,5 +87,6 @@ def register_callbacks(plotter, total_len):
     reset.register(p, trigger, set_mode, total_len)
     apply_smooth_cycle = smooth.register(p, trigger, set_mode)
     modes.register(p, trigger, set_mode)
+    backface.register(p, trigger, set_mode)
     axis.register(p, trigger, set_mode, apply_smooth_cycle)
     vtx_pick.register(p, trigger)

@@ -37,6 +37,7 @@ from alive_progress import alive_bar
 
 import psutil
 
+from configs.colorize import Msg
 from configs.settings import (
     DEFAULT_PRELOAD_ALL,
     DEFAULT_WINDOW_SIZE, DEFAULT_PRELOAD_AHEAD,
@@ -599,6 +600,8 @@ class FrameBuffer:
             logger.warning('Mesh file preload interrupted.')
             self.cleanup()
             raise
+
+        Msg.mark_dirty()
         logger.info(
             'All %d meshes preloaded in %.2fs.',
             total, time.perf_counter() - t0,
@@ -761,6 +764,7 @@ class FrameBuffer:
             logger.warning('Texture preload interrupted.')
             self.cleanup()
             raise
+        Msg.mark_dirty()
         logger.info(
             'All %d textures preloaded in %.2fs.',
             total, time.perf_counter() - t0,
@@ -966,6 +970,8 @@ class FrameBuffer:
             logger.warning('Frame cache build interrupted.')
             self.cleanup()
             raise
+
+        Msg.mark_dirty()
 
         if err_count:
             logger.warning(

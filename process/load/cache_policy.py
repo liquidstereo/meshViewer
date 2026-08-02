@@ -56,18 +56,27 @@ _NORMALS_MODES = frozenset({
     'isoline', 'wire', 'normal_color',
 })
 
+ALL_MODE_TOKEN = 'all'
+
 ENV_NO_NORMAL = 'MESHVIEWER_NO_NORMAL'
 
 ENV_STARTUP_MODE = 'MESHVIEWER_STARTUP_MODE'
 
-def set_startup_mode(mode: str | None) -> None:
+def set_startup_mode(mode) -> None:
+    if isinstance(mode, (list, tuple)):
+        mode = ','.join(mode)
     if mode:
         os.environ[ENV_STARTUP_MODE] = mode
     else:
         os.environ.pop(ENV_STARTUP_MODE, None)
 
 def startup_mode_override() -> str | None:
-    return os.environ.get(ENV_STARTUP_MODE) or None
+    modes = startup_mode_list()
+    return modes[0] if modes else None
+
+def startup_mode_list() -> list:
+    raw = os.environ.get(ENV_STARTUP_MODE) or ''
+    return [m.strip() for m in raw.split(',') if m.strip()]
 
 def effective_startup_mode(default: str = STARTUP_MODE) -> str:
     return startup_mode_override() or default
@@ -95,4 +104,11 @@ def resolve_cache_normals(mode: str, has_faces: bool,
     if setting is False:
         return False
 
-    return mode_needs_normals(mode) or DEFAULT_SMOOTH
+    modes = startup_mode_list() or [mode]
+    if mode not in modes:
+        modes = [mode, *modes]
+
+    if ALL_MODE_TOKEN in modes:
+        return True
+
+    return any(mode_needs_normals(m) for m in modes) or DEFAULT_SMOOTH

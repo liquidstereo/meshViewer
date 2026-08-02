@@ -1,4 +1,4 @@
-from configs.theme import apply_theme as _apply_theme
+from configs.settings_theme import apply_theme as _apply_theme
 from configs.settings_font import _set_fontsize
 
 COLOR_BG         = _apply_theme('#000000')

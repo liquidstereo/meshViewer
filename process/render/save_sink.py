@@ -104,7 +104,27 @@ def create_sink(plotter, save_path: str, executor) -> FrameSink:
     )
     return sink
 
-def format_saved_message(count: int, target: str) -> str:
-    return (
-        f'Saved {count} captured frames to "{os.path.relpath(target)}".'
-    )
+SAVED_TARGET_MAX_CHARS = 200
+
+def format_targets(target) -> str:
+    if isinstance(target, (list, tuple)):
+        if not target:
+            return ''
+        if len(target) > 1:
+            return format_target_count(target)
+        target = target[0]
+    text = os.path.relpath(target)
+    if len(text) > SAVED_TARGET_MAX_CHARS:
+        text = f'{text[:SAVED_TARGET_MAX_CHARS]}...'
+    return text
+
+def format_target_count(targets) -> str:
+    directory = os.path.relpath(os.path.dirname(targets[0]) or '.')
+    return f'{len(targets)} files. ({directory}{os.sep})'
+
+def format_saved_message(count: int, target) -> str:
+    text = format_targets(target)
+    if isinstance(target, (list, tuple)) and len(target) > 1:
+
+        return f'Saved {count} captured frames to {text}'
+    return f'Saved {count} captured frames to "{text}".'

@@ -11,7 +11,7 @@ _LOADING_COLOR = 'white'
 
 def show_loading() -> None:
     global _stop_event, _thread
-    Msg.Plain('—')
+    Msg.Divider()
     _stop_event = threading.Event()
     _thread = threading.Thread(
         target=Msg.Blink,

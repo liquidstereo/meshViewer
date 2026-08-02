@@ -7,6 +7,7 @@ from configs.keybinding import TURNTABLE_ROT_STEP
 from process.camera.utils import (
     cam_zoom, cam_dolly,
     cam_rotate_y, cam_rotate_x_rodrigues,
+    set_parallel_projection,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,9 @@ def _center_view(plotter, cam) -> None:
     plotter.render()
 
 def _toggle_proj(plotter, cam, set_mode_msg) -> None:
-    cam.SetParallelProjection(not cam.GetParallelProjection())
+    set_parallel_projection(
+        plotter, cam, not cam.GetParallelProjection()
+    )
     mode = 'PARALLEL' if cam.GetParallelProjection() else 'PERSPECTIVE'
     set_mode_msg(mode)
     plotter.render()

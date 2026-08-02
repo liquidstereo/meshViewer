@@ -2,7 +2,7 @@ import logging
 import subprocess
 from functools import lru_cache
 
-from configs.theme import make_fontsize_fn as _make_fontsize_fn
+from configs.settings_theme import make_fontsize_fn as _make_fontsize_fn
 from configs.settings_window import WINDOW_WIDTH as _WINDOW_WIDTH
 
 logger = logging.getLogger(__name__)

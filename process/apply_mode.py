@@ -28,8 +28,10 @@ from process.mode.isoline import (
 )
 from process.mode.wire import apply_wire, apply_wire_occluder
 from process.mode.edge import apply_edge, apply_edge_occluder
+from process.mode.outline import apply_outline, apply_outline_body
 from process.mode.depth import apply_depth
 from process.mode.normal_color import apply_normal_color
+from process.mode.id_color import apply_id_color
 from process.mode.mesh_quality import apply_mesh_quality
 from process.mode.face_normal import apply_face_normal
 from process.mode.vtx import apply_vtx_labels
@@ -69,10 +71,12 @@ _FACE_REQUIRED = {
     '_is_fnormal':      'FACE.NORM',
     '_is_wire':         'WIREFRAME',
     '_is_edge':         'EDGE.EXTRACT',
+    '_is_outline':      'OUTLINE',
     '_is_normal_color': 'SURF.NORMAL',
     '_is_smooth':       'SMOOTH',
     '_is_vtx':          'VERTEX.LABEL',
     '_is_lighting':     'MESH.REDUCTION',
+    '_is_id':           'ID.COLOR',
 }
 
 def apply_point_cloud_startup(p) -> None:
@@ -266,6 +270,20 @@ def apply_visual_mode(plotter, mesh, preloaded_tex):
         p._mesh_actor.VisibilityOn()
         p._prev_mode = None
 
+    if getattr(p, '_is_outline', False):
+        t0 = time.perf_counter()
+        apply_outline(p, mesh)
+        apply_outline_body(p, mesh, preloaded_tex)
+        p._outline_visible = True
+        logger.debug(
+            'apply_outline: %.4fs', time.perf_counter() - t0
+        )
+    elif getattr(p, '_outline_visible', False):
+        p._outline_actor.VisibilityOff()
+        p._outline_visible = False
+        p._mesh_actor.VisibilityOn()
+        p._prev_mode = None
+
     if p._is_iso_only:
         t0 = time.perf_counter()
         apply_iso_only(p, mesh)
@@ -274,6 +292,7 @@ def apply_visual_mode(plotter, mesh, preloaded_tex):
         )
     elif (not p._is_isoline and not p._is_wire
             and not getattr(p, '_is_edge', False)
+            and not getattr(p, '_is_outline', False)
             and not getattr(p, '_is_fnormal', False)):
         t0 = time.perf_counter()
         if MESH_MATTE_COLOR is not None:
@@ -302,6 +321,12 @@ def apply_visual_mode(plotter, mesh, preloaded_tex):
             apply_normal_color(p, mesh)
             logger.debug(
                 'apply_normal_color: %.4fs',
+                time.perf_counter() - t0,
+            )
+        elif getattr(p, '_is_id', False):
+            apply_id_color(p, mesh)
+            logger.debug(
+                'apply_id_color: %.4fs',
                 time.perf_counter() - t0,
             )
         elif getattr(p, '_is_mesh_quality', False):

@@ -3,9 +3,11 @@ import logging
 import vtk
 
 from configs.settings import (
-    SEQ_SIZE_W,
-    SEQ_PAD_RIGHT_PX, SEQ_PAD_BOTTOM_PX,
-    SEQ_IMAGE_EXTS,
+    SEQ_IMAGE_EXTS, DISPLAY_SEQ_ROUND, SEQ_ROUND_SS,
+)
+from process.overlay.seq_geometry import (
+    calc_viewport, viewport_px, scaled_radius,
+    make_corner_alpha, build_alpha_image,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,23 +57,6 @@ def _create_reader(filename):
     cls = _READER_MAP.get(ext, vtk.vtkPNGReader)
     return cls()
 
-def _calc_viewport(win_w, win_h, img_w, img_h):
-    pad_r = SEQ_PAD_RIGHT_PX / max(1, win_w)
-    pad_b = SEQ_PAD_BOTTOM_PX / max(1, win_h)
-    vp_h_px = SEQ_SIZE_W * win_w * max(1, img_h) / max(1, img_w)
-    seq_size_h = vp_h_px / max(1, win_h)
-    return (
-        1.0 - SEQ_SIZE_W - pad_r,
-        pad_b,
-        1.0 - pad_r,
-        seq_size_h + pad_b,
-    )
-
-def _viewport_px(viewport, win_w, win_h):
-    w = max(1, int((viewport[2] - viewport[0]) * win_w))
-    h = max(1, int((viewport[3] - viewport[1]) * win_h))
-    return w, h
-
 class SequenceOverlay:
 
     def __init__(self, plotter, image_files, total_frames: int = 0):
@@ -89,9 +74,11 @@ class SequenceOverlay:
 
         self._last_file = None
         self._fail_count = 0
+        self._alpha_image = None
 
         rw = plotter.render_window
         win_w, win_h = rw.GetSize()
+        self._win_w, self._win_h = win_w, win_h
 
         self._reader = _create_reader(self._files[0])
         self._reader.SetFileName(self._files[0])
@@ -99,9 +86,9 @@ class SequenceOverlay:
         dims = self._reader.GetOutput().GetDimensions()
         img_w, img_h = max(1, dims[0]), max(1, dims[1])
 
-        viewport = _calc_viewport(win_w, win_h, img_w, img_h)
+        viewport = calc_viewport(win_w, win_h, img_w, img_h)
         self._viewport = viewport
-        vp_px_w, vp_px_h = _viewport_px(viewport, win_w, win_h)
+        vp_px_w, vp_px_h = viewport_px(viewport, win_w, win_h)
 
         self._resize = vtk.vtkImageResize()
         self._resize.SetInputConnection(
@@ -111,9 +98,11 @@ class SequenceOverlay:
         self._resize.SetOutputDimensions(vp_px_w, vp_px_h, 1)
         self._resize.Update()
 
+        self._output = self._attach_rounding(vp_px_w, vp_px_h)
+
         self._actor = vtk.vtkImageActor()
         self._actor.GetMapper().SetInputConnection(
-            self._resize.GetOutputPort()
+            self._output.GetOutputPort()
         )
 
         self._renderer = vtk.vtkRenderer()
@@ -132,6 +121,73 @@ class SequenceOverlay:
             'output=%dx%d viewport=%s',
             n, vp_px_w, vp_px_h, viewport,
         )
+
+    def _refresh_alpha(self, vp_px_w, vp_px_h) -> int:
+        radius = scaled_radius(self._win_w)
+        self._alpha_image = build_alpha_image(
+            make_corner_alpha(vp_px_w, vp_px_h, radius, SEQ_ROUND_SS)
+        )
+
+        self._alpha_src.SetOutput(self._alpha_image)
+        self._alpha_src.Modified()
+        return radius
+
+    def _attach_rounding(self, vp_px_w, vp_px_h):
+        if not DISPLAY_SEQ_ROUND or scaled_radius(self._win_w) <= 0:
+            return self._resize
+
+        n_comp = self._reader.GetOutput().GetNumberOfScalarComponents()
+        if n_comp < 3:
+            logger.warning(
+                'SequenceOverlay: rounding skipped'
+                ' (%d-component image, RGB required).', n_comp,
+            )
+            return self._resize
+
+        self._rgb = vtk.vtkImageExtractComponents()
+        self._rgb.SetInputConnection(self._resize.GetOutputPort())
+        self._rgb.SetComponents(0, 1, 2)
+
+        self._alpha_src = vtk.vtkTrivialProducer()
+        self._append = vtk.vtkImageAppendComponents()
+        self._append.SetInputConnection(0, self._rgb.GetOutputPort())
+        radius = self._refresh_alpha(vp_px_w, vp_px_h)
+        self._append.AddInputConnection(0, self._alpha_src.GetOutputPort())
+        self._append.Update()
+        logger.info(
+            'SequenceOverlay: rounding radius=%dpx ss=%d',
+            radius, SEQ_ROUND_SS,
+        )
+        return self._append
+
+    def sync_scale(self) -> bool:
+        rw = self._renderer.GetRenderWindow()
+        if rw is None or not self._files:
+            return False
+        win_w, win_h = rw.GetSize()
+        if win_w == self._win_w and win_h == self._win_h:
+            return False
+        self._win_w, self._win_h = win_w, win_h
+
+        dims = self._reader.GetOutput().GetDimensions()
+        viewport = calc_viewport(
+            win_w, win_h, max(1, dims[0]), max(1, dims[1]),
+        )
+        self._viewport = viewport
+        self._renderer.SetViewport(*viewport)
+
+        vp_px_w, vp_px_h = viewport_px(viewport, win_w, win_h)
+        self._resize.SetOutputDimensions(vp_px_w, vp_px_h, 1)
+        self._resize.Update()
+        if self._alpha_image is not None:
+            self._refresh_alpha(vp_px_w, vp_px_h)
+        self._output.Update()
+        self._fit_camera()
+        logger.debug(
+            'SequenceOverlay rescaled: win=%dx%d output=%dx%d',
+            win_w, win_h, vp_px_w, vp_px_h,
+        )
+        return True
 
     def _fit_camera(self):
         self._actor.Update()
@@ -238,7 +294,7 @@ class SequenceOverlay:
             return
         self._fail_count = 0
         self._resize.Modified()
-        self._resize.Update()
+        self._output.Update()
 
 def init_sequence_overlay(
     plotter, image_files, total_frames: int = 0

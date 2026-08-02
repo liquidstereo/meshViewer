@@ -14,6 +14,7 @@ from configs.settings import (
     UI_LOG_COLOR, UI_LOG_ERROR_COLOR,
     UI_LOG_PAD_PX, UI_LOG_PAD_PY,
     UI_LOG_FORMAT, UI_LOG_MAX_CHARS, UI_LOG_ELLIPSIS,
+    DISPLAY_CAM_DETAILS,
     UI_HELP_COLOR,
     UI_HELP_BG_OPACITY,
     UI_COLORBAR_WIDTH, UI_COLORBAR_HEIGHT,
@@ -24,6 +25,7 @@ from configs.settings import (
     ERROR_MSG_DURATION,
     LOG_MSEC_FORMAT,
 )
+from process.camera.utils import get_cam_transform
 from process.mode.common import _hex_to_rgb, _set_font_family
 from process.overlay.font_scale import (
     register_text_prop, update_font_scale, compute_log_max_chars,
@@ -38,11 +40,12 @@ _HELP_TEXT = (
     'SPACE      Play / Pause\n'
     'Left/Right Frame Step\n'
     'Up / Down  First / Last Frame\n'
-    '`          Screenshot\n'
-    '1          Grid + BBox\n'
+    'F10        Screenshot\n'
+    '`          Grid + BBox\n'
     ';          Grid\n'
     'q          Default Mesh\n'
     's          Smooth Shading\n'
+    '1          Outline (ID Color)\n'
     '2          Vtx Labels / Pt.RGB toggle\n'
     '3          Wireframe\n'
     '4          Smooth+PBR+Tex (cycle)\n'
@@ -52,9 +55,11 @@ _HELP_TEXT = (
     '7          Mesh Quality\n'
     '8          Face Normal\n'
     '9          Depth\n'
+    '0          ID Color\n'
     'e          Edge Extract\n'
     'b          Backface\n'
     'c          Parallel / Perspective\n'
+    'Tab        Axis Swap Cycle\n'
     'F11        Theme Toggle (black/white)\n'
     'F12        Actor Visibility Cycle\n'
     'F1         Front View\n'
@@ -78,6 +83,7 @@ _HELP_TEXT = (
     '/          Toggle Info\n'
     ',          Toggle Status Text\n'
     '.          Toggle Log Overlay\n'
+    "'          Toggle Image Sequence\n"
     'Escape     Quit\n'
     'H          Hide Help'
 )
@@ -122,6 +128,38 @@ def init_status_text(plotter) -> None:
     plotter._status_actor = actor
     logger.debug('init_status_text: actor registered')
 
+def _fmt3(value: float) -> str:
+    v = float(value)
+    if abs(v) < 5e-04:
+        v = 0.0
+    return f'{v:.3f}'
+
+def _camera_status(plotter) -> str:
+    cam = plotter.renderer.GetActiveCamera()
+    cx, cy, cz = cam.GetPosition()
+    pos = f'{_fmt3(cx)}, {_fmt3(cy)}, {_fmt3(cz)}'
+    fl = _fmt3(cam.GetDistance())
+    is_parallel = cam.GetParallelProjection()
+    mode_str = 'PARALLEL' if is_parallel else 'PERSPECTIVE'
+    zoom = cam.GetParallelScale() if is_parallel else cam.GetViewAngle()
+
+    if not DISPLAY_CAM_DETAILS:
+        return (
+            f'{mode_str}.CAM: {pos}\n'
+            f'FOCAL.LENGTH: {fl}\n'
+            f'ZOOM: {_fmt3(zoom)}'
+        )
+
+    az, el, truck, pedestal, dolly = get_cam_transform(plotter)
+    return (
+        f'CAM.POS(ref): {pos}\n'
+        f'FOCAL.LENGTH: {fl}\n'
+        f'ZOOM: {_fmt3(zoom)} ({mode_str})\n'
+        f'AZIMUTH: {_fmt3(az)} | ELEVATION: {_fmt3(el)}\n'
+        f'TRUCK: {_fmt3(truck)} | PEDESTAL: {_fmt3(pedestal)}'
+        f' | DOLLY: {_fmt3(dolly)}'
+    )
+
 def update_status_text(plotter, idx: int, total: int, fps: float) -> None:
     actor = getattr(plotter, '_status_actor', None)
     if actor is None:
@@ -135,12 +173,7 @@ def update_status_text(plotter, idx: int, total: int, fps: float) -> None:
 
     is_point_cloud = n_pts > 0 and n_fc == 0 and n_cells == 0
 
-    cam = plotter.renderer.GetActiveCamera()
-    cx, cy, cz = cam.GetPosition()
-    fl = cam.GetDistance()
-    is_parallel = cam.GetParallelProjection()
-    mode_str = 'Parallel' if is_parallel else 'Perspective'
-    zoom = cam.GetParallelScale() if is_parallel else cam.GetViewAngle()
+    cam_block = _camera_status(plotter)
 
     if is_point_cloud:
         elem_info = f'POINTS: {n_pts:,}'
@@ -196,9 +229,7 @@ def update_status_text(plotter, idx: int, total: int, fps: float) -> None:
         f'—\n'
         f'{elem_info}\n'
 
-        f'{mode_str.upper()}.CAM: {cx:.3f}, {cy:.3f}, {cz:.3f}\n'
-        f'FOCAL.LENGTH: {fl:.3f}\n'
-        f'ZOOM: {zoom:.3f}'
+        f'{cam_block}'
     )
     actor.SetInput(status)
 
@@ -477,6 +508,9 @@ def init_overlay_text(
 
 def update_periodic_overlays(plotter) -> None:
     update_font_scale(plotter)
+    seq = getattr(plotter, '_seq_overlay', None)
+    if seq is not None:
+        seq.sync_scale()
     update_log_overlay(plotter)
     update_colorbar(plotter)
 

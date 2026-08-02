@@ -7,7 +7,7 @@ WINDOW_MONITOR_INDEX = 0
 
 SHOW_GRID           = False
 SHOW_BBOX           = False
-SHOW_BACKFACE       = True
+SHOW_BACKFACE       = False
 SHOW_LIGHTING       = True
 SHOW_ANIMATION      = True
 SHOW_TURNTABLE      = False
