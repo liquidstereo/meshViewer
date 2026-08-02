@@ -124,7 +124,9 @@ def apply_vtx_labels(p, mesh):
         tp = ta.GetTextProperty()
         _set_font_family(tp, UI_FONT_FAMILY)
         tp.SetFontSize(_cfg.VTX_LABEL_FONT_SIZE)
-        tp.SetColor(*_hex_to_rgb(VTX_LABEL_COLOR))
+        tp.SetColor(*_hex_to_rgb(
+            getattr(p, '_vtx_label_color', VTX_LABEL_COLOR)
+        ))
         tp.BoldOff()
         tp.ShadowOff()
         tp.ItalicOff()

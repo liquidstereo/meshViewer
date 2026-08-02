@@ -12,11 +12,11 @@ from process.keys import bind_key
 logger = logging.getLogger(__name__)
 
 _MESH_HIDE_MODES = (
-    ('_is_wire', '_wire_mesh_hidden', False,
+    ('_is_wire', '_wire_mesh_hidden', True,
      LBL_MESH_HIDDEN, LBL_MESH_VISIBLE),
     ('_is_vtx', '_vtx_mesh_hidden', False,
      LBL_MESH_HIDDEN, LBL_MESH_VISIBLE),
-    ('_is_edge', '_edge_mesh_hidden', True,
+    ('_is_edge', '_edge_mesh_hidden', False,
      LBL_EDGE_HIDDEN, LBL_EDGE_VISIBLE),
     ('_is_outline', '_outline_mesh_hidden', True,
      LBL_MESH_HIDDEN, LBL_MESH_VISIBLE),

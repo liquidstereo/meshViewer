@@ -9,27 +9,10 @@ An interactive 3D mesh viewer built on OpenGL with support for static meshes, fr
 ### Latest
 
 - **Headless export** - `--headless` renders offscreen and exits once the
-  save completes. Requires `-s`, rejects `-c`. Capture is synchronous:
-  offscreen rendering targets VTK's own framebuffer, where PBO readback
-  returns blank frames.
-- **Video recording** - `-s` writes an h264 mp4 by default. `-f` selects
-  mp4/mov/png/jpg, `-q` selects low/high/raw. No frame is dropped while
-  saving; `SAVE_MODE_FILENAME` appends the render mode to the filename.
-- **Per-overlay switches** - `DISPLAY_*` in `configs/settings_overlay.py`.
-  `False` skips actor creation, so the matching toggle key stays inert.
-- **Startup render mode** - `-m` overrides the settings file per input
-  type. `STARTUP_MODE` is the single source of truth at launch.
-- **ID and Outline modes** - `0` paints every connected mesh in its own
-  color, `PgUp` / `PgDn` cycling `ID (Flat)` and `ID (Shaded)`;
-  `DEFAULT_ID_STYLE` picks the one the viewer starts in and
-  `DEFAULT_ID_SHADER` picks the shading. `1` draws the same ID colors as
-  a silhouette outline. Both are mesh only.
-- **Orthographic views** - `F1`-`F6` always switch to parallel
-  projection, so front and side views stay measurable regardless of the
-  current `c` projection state.
-- **Graceful shutdown** - `Ctrl+C` in the terminal releases the render
-  window, video sink, and worker threads through the same path as
-  `Escape`; a save in progress is closed before exit.
+  save completes. Requires `-s`, rejects `-c`. Output is identical with and
+  without it: render settings never change, only the capture path does.
+  Fast asynchronous capture needs `RENDER_MSAA_SAMPLES = 0`; with MSAA on
+  (default 8) both paths capture synchronously - slower, but anti-aliased.
 - **Batch render** - pass several modes to `-m` as a comma separated list
   to play and save them one after another. Every mode starts from the
   same camera and frame index, and `SAVE_MODE_FILENAME` keeps the outputs
@@ -39,31 +22,12 @@ An interactive 3D mesh viewer built on OpenGL with support for static meshes, fr
   `DATA_NORMALIZE*` rescales skewed depth ranges.
 - **Optional point normals** - `--no-normal` (or `CACHE_NORMALS`) shrinks
   the cache by roughly 20 percent when no normal-based mode is used.
-- **Configurable overlay font** - `FONT_PRIORITY` picks the first family
-  installed; overlay text scales with the window.
-- **Per-type axis and flip settings** - `MESH_*`, `PT_*`, `NP_*` and
-  `AUDIO_*` prefixed overrides fall back to the shared value.
-
-### Performance
-
-| Change | Result |
-|---|---|
-| Cached point normals | preload 212 s to 48 s (1,750 frames) |
-| Decimation skip + float32 cache | load ~19 min to ~1 min 10 s (25 GB OBJ) |
-| Subsample-aware NPZ preload | per-frame 131 ms to 5 ms (~25 FPS) |
-| Contour normal propagation | isoline 288 ms to 153 ms per frame |
-| Direct interactor event handling | ~33% higher steady-state FPS |
-| Pure-Python PLY parser | GS PLY cache build ~4 min to ~1 min 35 s |
-| Cached HDRI IBL | no recompute when toggling Smooth mode |
-
-Corrupted or truncated source frames no longer flicker: they are marked
-with `build_failed.marker` and held at the nearest valid frame.
 
 ---
 
 ## Overview
 
-MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio visualization tool built on PyVista and VTK (Visualization Toolkit). It supports 11+ mesh formats and 8+ audio formats, and is optimized for seamless playback of time-series frame data as well as static models.
+MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio visualizer built on VTK (Visualization Toolkit). It supports 11+ mesh formats and 8+ audio formats and is optimized for seamless playback of both time-series mesh sequences and static models.
 
 **Key Features**
 
@@ -90,9 +54,7 @@ MeshViewer is a high-performance 3D mesh sequence viewer and real-time audio vis
 - [ffmpeg](https://ffmpeg.org/download.html) — required for `mp4` / `mov`
   output only (`conda install -c conda-forge ffmpeg`). Without it, use
   `-f png`.
-- **Linux is strongly recommended.** MeshViewer is built and tested on
-  Linux. Other platforms are untested, and the OpenGL/VTK paths in
-  particular are known to behave differently.
+- **Linux is strongly recommended.** MeshViewer is built and tested on Linux only. Other platforms are untested.
 
 ---
 
@@ -291,8 +253,8 @@ The tables below are generated from the shipped settings files at build time.
 
 | Setting | Default |
 |---|---|
-| Width × Height | 1080 × 1610 |
-| Aspect ratio | 1.49074 |
+| Width × Height | 1080 × 1080 |
+| Aspect ratio | 1.0 |
 | MSAA samples | 8 |
 | FXAA | off |
 | Monitor index | 0 |
@@ -302,8 +264,8 @@ The tables below are generated from the shipped settings files at build time.
 | Setting | Default |
 |---|---|
 | Startup render mode | `default` |
-| Startup ID style | `shaded` |
-| ID shading | `default` |
+| Startup ID style | `flat` |
+| ID shading | `pbr` |
 | Animation | on |
 | Target FPS | 30 |
 | Frame buffer size | RAM-dependent |
@@ -357,6 +319,7 @@ merely start hidden and stay toggleable with `/`.
 | `↑` / `↓` | Jump to first / last frame |
 | `BackSpace` | Full reset (mode, camera, state) |
 | `Escape` | Quit |
+| `Ctrl+R` | Start / stop recording the current view |
 | `Ctrl+C` | Quit from the terminal; shuts down the same way as `Escape` |
 
 ### Camera

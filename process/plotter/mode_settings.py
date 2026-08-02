@@ -1,6 +1,25 @@
 from configs.settings import (
     ISO_AXIS_DEFAULT, WIRE_AXIS_DEFAULT,
     FNORMAL_AXIS_DEFAULT, DEPTH_AXIS_DEFAULT,
+    STARTUP_AXIS,
+    STARTUP_REVERSE_X_AXIS, STARTUP_REVERSE_Y_AXIS, STARTUP_REVERSE_Z_AXIS,
+    FLIP_OBJECT_X, FLIP_OBJECT_Y, FLIP_OBJECT_Z,
+    MESH_STARTUP_AXIS,
+    MESH_STARTUP_REVERSE_X_AXIS, MESH_STARTUP_REVERSE_Y_AXIS,
+    MESH_STARTUP_REVERSE_Z_AXIS,
+    MESH_FLIP_OBJECT_X, MESH_FLIP_OBJECT_Y, MESH_FLIP_OBJECT_Z,
+    PT_STARTUP_AXIS,
+    PT_STARTUP_REVERSE_X_AXIS, PT_STARTUP_REVERSE_Y_AXIS,
+    PT_STARTUP_REVERSE_Z_AXIS,
+    PT_FLIP_OBJECT_X, PT_FLIP_OBJECT_Y, PT_FLIP_OBJECT_Z,
+    NP_STARTUP_AXIS,
+    NP_STARTUP_REVERSE_X_AXIS, NP_STARTUP_REVERSE_Y_AXIS,
+    NP_STARTUP_REVERSE_Z_AXIS,
+    NP_FLIP_OBJECT_X, NP_FLIP_OBJECT_Y, NP_FLIP_OBJECT_Z,
+    AUDIO_STARTUP_AXIS,
+    AUDIO_STARTUP_REVERSE_X_AXIS, AUDIO_STARTUP_REVERSE_Y_AXIS,
+    AUDIO_STARTUP_REVERSE_Z_AXIS,
+    AUDIO_FLIP_OBJECT_X, AUDIO_FLIP_OBJECT_Y, AUDIO_FLIP_OBJECT_Z,
 )
 
 _AXIS_TOKENS = {'X': 0, 'Y': 1, 'Z': 2, 'CAM': 3}
@@ -48,3 +67,57 @@ def resolve_id_shader(value) -> str:
 def apply_mode_axes(plotter) -> None:
     for attr, value in _MODE_AXIS_SETTINGS.items():
         setattr(plotter, attr, resolve_mode_axis(value))
+
+def resolve_axis_settings(file_type: str) -> tuple:
+    _overrides = {
+        'mesh': (
+            MESH_STARTUP_AXIS,
+            MESH_STARTUP_REVERSE_X_AXIS,
+            MESH_STARTUP_REVERSE_Y_AXIS,
+            MESH_STARTUP_REVERSE_Z_AXIS,
+            MESH_FLIP_OBJECT_X,
+            MESH_FLIP_OBJECT_Y,
+            MESH_FLIP_OBJECT_Z,
+        ),
+        'point_cloud': (
+            PT_STARTUP_AXIS,
+            PT_STARTUP_REVERSE_X_AXIS,
+            PT_STARTUP_REVERSE_Y_AXIS,
+            PT_STARTUP_REVERSE_Z_AXIS,
+            PT_FLIP_OBJECT_X,
+            PT_FLIP_OBJECT_Y,
+            PT_FLIP_OBJECT_Z,
+        ),
+        'np_data': (
+            NP_STARTUP_AXIS,
+            NP_STARTUP_REVERSE_X_AXIS,
+            NP_STARTUP_REVERSE_Y_AXIS,
+            NP_STARTUP_REVERSE_Z_AXIS,
+            NP_FLIP_OBJECT_X,
+            NP_FLIP_OBJECT_Y,
+            NP_FLIP_OBJECT_Z,
+        ),
+        'audio': (
+            AUDIO_STARTUP_AXIS,
+            AUDIO_STARTUP_REVERSE_X_AXIS,
+            AUDIO_STARTUP_REVERSE_Y_AXIS,
+            AUDIO_STARTUP_REVERSE_Z_AXIS,
+            AUDIO_FLIP_OBJECT_X,
+            AUDIO_FLIP_OBJECT_Y,
+            AUDIO_FLIP_OBJECT_Z,
+        ),
+    }
+    _defaults = (
+        STARTUP_AXIS,
+        STARTUP_REVERSE_X_AXIS,
+        STARTUP_REVERSE_Y_AXIS,
+        STARTUP_REVERSE_Z_AXIS,
+        FLIP_OBJECT_X,
+        FLIP_OBJECT_Y,
+        FLIP_OBJECT_Z,
+    )
+    overrides = _overrides.get(file_type, (None,) * 7)
+    return tuple(
+        o if o is not None else d
+        for o, d in zip(overrides, _defaults)
+    )

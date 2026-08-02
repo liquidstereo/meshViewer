@@ -9,7 +9,7 @@ from configs.settings import (
     RENDER_MSAA_SAMPLES, RENDER_FXAA,
     RENDER_LINE_SMOOTHING, RENDER_POINT_SMOOTHING,
     SAVE_ALPHA, SAVE_PNG_COMPRESSION, SAVE_JPEG_QUALITY,
-    SAVE_EXT, SAVE_PBO_ENABLED,
+    SAVE_EXT, SAVE_PBO_ENABLED, SAVE_SETTING_LOG,
     STARTUP_AXIS,
     STARTUP_REVERSE_X_AXIS, STARTUP_REVERSE_Y_AXIS, STARTUP_REVERSE_Z_AXIS,
     FLIP_OBJECT_X, FLIP_OBJECT_Y, FLIP_OBJECT_Z,
@@ -20,7 +20,6 @@ from configs.settings import (
     SHOW_HIDE_INFO, SHOW_COLORBAR, SHOW_IMAGE_SEQUENCE, SHOW_MESH,
     MESH_MATTE_COLOR, COLOR_BG,
     WORKER_COUNT,
-    resolve_axis_settings,
 
     STARTUP_MODE, DEFAULT_TEXTURE, DEFAULT_SMOOTH,
     HDRI_PATH, HDRI_ENABLE, HDRI_INTENSITY, HDRI_ROT_STEP,
@@ -99,17 +98,27 @@ from configs.settings import (
 
 from process.init.settings_log_modes import _build_mode_lines
 
+from process.plotter.mode_settings import resolve_axis_settings
+
 logger = logging.getLogger(__name__)
 
-_SETTINGS_LOG_FILENAME = 'settings.log'
+SETTINGS_LOG_SUFFIX = '_settings.log'
+
+def write_output_settings_log(plotter, log_path: str) -> None:
+    if not SAVE_SETTING_LOG:
+        return
+    write_settings_log(
+        log_path,
+        geo_type=getattr(plotter, '_geo_type', 'mesh'),
+        input_path=getattr(plotter, '_input_path', ''),
+    )
 
 def write_settings_log(
-    save_dir: str,
+    log_path: str,
     geo_type: str = 'mesh',
     input_path: str = '',
 ) -> None:
-    os.makedirs(save_dir, exist_ok=True)
-    log_path = os.path.join(save_dir, _SETTINGS_LOG_FILENAME)
+    os.makedirs(os.path.dirname(log_path) or '.', exist_ok=True)
     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     (
         _axis, _rx, _ry, _rz, _fx, _fy, _fz,

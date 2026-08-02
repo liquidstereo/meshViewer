@@ -3,7 +3,9 @@ import numpy as np
 import vtk
 
 from configs.settings import NORMAL_COLOR_ENABLE_LIGHTING
-from process.mode.common import _set_mesh_input, _set_scalars_buffer
+from process.mode.common import (
+    _set_mesh_input, _set_scalars_buffer, _set_normals_buffer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,18 @@ def apply_normal_color(p, mesh):
         array_type=vtk.VTK_UNSIGNED_CHAR,
     )
 
+    _lighting = getattr(
+        p, '_normal_color_lighting', NORMAL_COLOR_ENABLE_LIGHTING,
+    )
+    _need_smooth = (
+        _lighting and getattr(p, '_is_smooth_shading', False)
+    )
+    if _need_smooth:
+        _set_normals_buffer(cached, normals, p, '_mesh_normal_buf')
+    else:
+        cached.GetPointData().SetNormals(None)
+        cached.GetPointData().Modified()
+
     mapper.SetScalarModeToDefault()
     mapper.SetColorModeToDirectScalars()
     mapper.ScalarVisibilityOn()
@@ -33,11 +47,11 @@ def apply_normal_color(p, mesh):
 
     prop = actor.GetProperty()
     prop.SetOpacity(getattr(p, '_mesh_opacity', 1.0))
-    prop.SetLighting(NORMAL_COLOR_ENABLE_LIGHTING)
+    prop.SetLighting(_lighting)
     prop.SetRepresentationToSurface()
     prop.EdgeVisibilityOff()
 
-    if getattr(p, '_is_smooth_shading', False):
+    if _need_smooth:
         prop.SetInterpolationToPhong()
     else:
         prop.SetInterpolationToFlat()

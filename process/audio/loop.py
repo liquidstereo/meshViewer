@@ -19,6 +19,7 @@ from process.render.loop import _playing_monitor
 from process.audio.state import AudioContext
 from process.window.display import capture_frame
 from process.render.save_sink import FrameSink, resolve_stem
+from process.init.settings_log import write_output_settings_log
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ def run_audio_loop(
             ctx.executor, _w, _h, _AUDIO_FPS,
             getattr(plotter, '_save_quality', 'high'),
         )
+        write_output_settings_log(plotter, ctx.sink.settings_log_path)
         plotter._save_sink = ctx.sink
         logger.info(
             'Audio save sink: mode=%s target=%s fps=%d',

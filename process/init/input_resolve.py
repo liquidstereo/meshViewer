@@ -7,7 +7,6 @@ from configs.settings import (
 )
 from configs.logging_cfg import setup_logging
 from configs.colorize import Msg
-from process.init.session_log import write_settings_log
 from process.viewer import detect_file_type
 
 def resolve_audio_input(args) -> str | None:
@@ -48,14 +47,10 @@ def prepare_session(args, files: list | None,
         args.input, level=DEBUG if args.verbose else INFO,
         headless=args.headless,
     )
-    if not args.save:
-        return
     if geo_type is None:
         geo_type = detect_file_type(files[0]) if files else 'mesh'
-    write_settings_log(
-        args.save, geo_type=geo_type,
-        input_path=getattr(args, 'input_path', ''),
-    )
+
+    args._geo_type = geo_type
 
 def _find_audio_path(name: str) -> str | None:
     candidates = (

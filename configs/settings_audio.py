@@ -1,4 +1,4 @@
-from configs.settings_theme import (
+from core.theme import (
     apply_theme as _apply_theme,
     make_fontsize_fn as _make_fontsize_fn,
 )

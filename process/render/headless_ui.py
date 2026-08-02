@@ -9,6 +9,8 @@ from configs.colorize import Msg
 from configs.system_resources import get_system_info, get_gpu_info
 
 _BAR_TITLE = 'EXPORTING FRAMES...'
+
+_BAR_TITLE_DONE = 'FRAME EXPORT COMPLETE'
 _BAR_TITLE_LENGTH = 25
 _BAR_LENGTH = 15
 _JOIN_TIMEOUT = 2.0
@@ -21,6 +23,11 @@ _COLOR_GPU = 'green'
 
 def headless_progress(total: int, title: str = _BAR_TITLE):
     return _bar_context(total, title)
+
+def mark_bar_complete(bar, title: str = None) -> None:
+    if bar is None:
+        return
+    bar.title = title or _BAR_TITLE_DONE
 
 @contextlib.contextmanager
 def _bar_context(total: int, title: str):
@@ -46,21 +53,30 @@ def text_cols() -> int:
 def fit_sysinfo(styled: str, plain: str, cols: int) -> str:
     return styled if len(styled) <= cols else plain
 
-def _sysinfo_parts() -> tuple:
+SYSINFO_DECIMALS = 3
+_SYSINFO_FMT = f'{{:.{SYSINFO_DECIMALS}f}}'
+
+def format_usage(value: float) -> str:
+    return _SYSINFO_FMT.format(value)
+
+def sysinfo_segments() -> tuple:
     info = get_system_info()
     gpu = get_gpu_info()
     parts = [
-        (_COLOR_CPU, f'CPU: {info["cpu_percent"]:3.1f}% . '),
-        (_COLOR_MEM, f'MEM: {info["memory_percent"]:3.1f}%'),
+        (_COLOR_CPU, f'CPU: {format_usage(info["cpu_percent"])}% . '),
+        (_COLOR_MEM, f'MEM: {format_usage(info["memory_percent"])}%'),
     ]
     if gpu is not None:
         parts.append(
-            (_COLOR_GPU, f' . GPU: {gpu["gpu_percent"]:3.1f}% . ')
+            (_COLOR_GPU, f' . GPU: {format_usage(gpu["gpu_percent"])}% . ')
         )
         parts.append(
-            (_COLOR_GPU, f'VRAM: {gpu["vram_percent"]:3.3f}%')
+            (_COLOR_GPU, f'VRAM: {format_usage(gpu["vram_percent"])}%')
         )
     return tuple(parts)
+
+def _sysinfo_parts() -> tuple:
+    return sysinfo_segments()
 
 def format_sysinfo() -> str:
     parts = _sysinfo_parts()

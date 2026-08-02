@@ -12,7 +12,7 @@ from configs.system_resources import get_system_info, get_gpu_info
 from configs.settings import (
     TARGET_ANIM_FPS, MAX_FRAME_SKIP,
     UPDATE_INTERVAL, UPDATE_INTERVAL_PLAY,
-    SAVE_ALPHA, SAVE_PBO_ENABLED, SAVE_ENCODE_WORKERS,
+    SAVE_ALPHA, SAVE_ENCODE_WORKERS,
     TURNTABLE_STEP,
 )
 import traceback
@@ -24,8 +24,10 @@ from process.scene.grid import update_grid_bounds
 from process.load.frame_integrity import format_broken_message
 from process.window.display import capture_frame, PBOCapture
 from process.render.save_sink import create_sink, format_saved_message
+from process.render.capture_policy import pbo_skip_reason, use_pbo_capture
 from process.render.headless_ui import (
     headless_progress, start_sysinfo_monitor, stop_sysinfo_monitor,
+    format_usage, mark_bar_complete,
 )
 from process.init.exit_summary import emit_exit_summary, finalize_logs
 from process.init.shutdown import close_progress, graceful_shutdown
@@ -33,6 +35,12 @@ from process.overlay.hud_texts import (
     update_status_text, update_log_overlay,
     update_mode_text, update_colorbar,
     update_periodic_overlays,
+)
+from process.window.title import set_recording_title
+from process.render.live_record import (
+    request_toggle as _rec_request,  # noqa: F401
+    start as _rec_start, stop as _rec_stop,
+    console_message as _rec_console,
 )
 
 logger = logging.getLogger(__name__)
@@ -94,17 +102,17 @@ def _playing_monitor(
             break
 
         sys_info_str = Msg.Red(
-            f'CPU: {info["cpu_percent"]:3.1f}% . ', verbose=True,
+            f'CPU: {format_usage(info["cpu_percent"])}% . ', verbose=True,
         )
         sys_info_str += Msg.Cyan(
-            f'MEM: {info["memory_percent"]:3.1f}% . ', verbose=True,
+            f'MEM: {format_usage(info["memory_percent"])}% . ', verbose=True,
         )
         if _gpu_avail:
             sys_info_str += Msg.Green(
-                f'GPU: {gpu["gpu_percent"]:3.1f}% . ', verbose=True,
+                f'GPU: {format_usage(gpu["gpu_percent"])}% . ', verbose=True,
             )
             sys_info_str += Msg.Green(
-                f'VRAM: {gpu["vram_percent"]:3.3f}%', verbose=True,
+                f'VRAM: {format_usage(gpu["vram_percent"])}%', verbose=True,
             )
 
         sys.stdout.write('\033[1A')
@@ -162,19 +170,27 @@ def _finish_save(sink, count) -> None:
     )
 
 def _mark_batch_complete(plotter, sink, count, bar) -> None:
-    if bar is not None:
-        title = getattr(plotter, '_batch_title', '') or ''
-        bar.title = f'{title} COMPLETE'
+    title = getattr(plotter, '_batch_title', '') or ''
+    mark_bar_complete(bar, f'{title} COMPLETE' if title else None)
     targets = getattr(plotter, '_batch_targets', None)
     if targets is not None and sink.display_target:
         targets.append(sink.display_target)
     plotter._batch_saved_count = count
 
-def _start_playing_monitor(plotter, headless: bool) -> tuple:
+def _swap_monitor(plotter, stop_event, thread, message):
+    if stop_event is not None:
+        stop_event.set()
+        thread.join(timeout=2.0)
+    return _start_playing_monitor(plotter, False, message)
+
+def _start_playing_monitor(plotter, headless: bool, message=None) -> tuple:
     stop_event = threading.Event()
     thread = threading.Thread(
         target=_playing_monitor,
-        args=(stop_event, _HEADLESS_PLAY_MSG if headless else None),
+        args=(
+            stop_event,
+            message or (_HEADLESS_PLAY_MSG if headless else None),
+        ),
         daemon=True,
     )
     thread.start()
@@ -184,13 +200,15 @@ def _start_playing_monitor(plotter, headless: bool) -> tuple:
 
 def _on_save_complete(plotter, sink, count, bar, batch, headless) -> tuple:
     _finish_save(sink, count)
+    mark_bar_complete(bar)
+    set_recording_title(plotter, False)
     if batch:
         _mark_batch_complete(plotter, sink, count, bar)
         return None, None
     if headless:
         return None, None
     close_progress(plotter)
-    Msg.Dim(format_saved_message(count, sink.display_target))
+
     return _start_playing_monitor(plotter, headless)
 
 def _emit_headless_exit(plotter, total, sink) -> None:
@@ -232,13 +250,14 @@ def render_loop(plotter, buffer) -> None:
     save_sink = create_sink(plotter, save_path, executor) if save_path else None
     plotter._save_sink = save_sink
     pbo_capture = None
-    if save_path and SAVE_PBO_ENABLED and headless:
 
+    _pbo_skip = pbo_skip_reason(plotter)
+    if save_path and _pbo_skip:
         logger.info(
-            'headless: PBO capture disabled'
-            ' - using synchronous capture_frame()',
+            'PBO capture disabled (%s)'
+            ' - using synchronous capture_frame()', _pbo_skip,
         )
-    if save_path and SAVE_PBO_ENABLED and not headless:
+    if use_pbo_capture(plotter, save_path is not None):
         _w, _h = plotter.render_window.GetSize()
         _n_comp = 4 if SAVE_ALPHA else 3
         pbo_capture = PBOCapture(plotter.render_window, _w, _h, _n_comp)
@@ -246,6 +265,12 @@ def render_loop(plotter, buffer) -> None:
             'PBO capture enabled: %dx%d n_comp=%d',
             _w, _h, _n_comp,
         )
+
+    rec_sink = None
+    plotter._rec_toggle_request = False
+    plotter._rec_sink = None
+    if save_sink is not None:
+        set_recording_title(plotter, True)
 
     _perf_n = 0
     _perf_get_sum = _perf_mode_sum = _perf_render_sum = 0.0
@@ -312,12 +337,13 @@ def render_loop(plotter, buffer) -> None:
         anim_fired = False
         skip = 0
 
+        _saving = save_path is not None or rec_sink is not None
         if plotter._is_playing and (
-            save_path is not None
+            _saving
             or curr - last_anim_time >= _FRAME_INTERVAL
         ):
             elapsed = curr - last_anim_time
-            skip = 0 if save_path else min(
+            skip = 0 if _saving else min(
                 int(elapsed / _FRAME_INTERVAL) - 1,
                 MAX_FRAME_SKIP,
             )
@@ -426,6 +452,23 @@ def render_loop(plotter, buffer) -> None:
             update_periodic_overlays(plotter)
             ui_time = curr
 
+        if plotter._rec_toggle_request:
+            plotter._rec_toggle_request = False
+            if rec_sink is None:
+                rec_sink = _rec_start(plotter, executor)
+                _blink_stop, _blink_thread = _swap_monitor(
+                    plotter, _blink_stop, _blink_thread,
+                    _rec_console(),
+                )
+            else:
+                _count = _rec_stop(plotter, rec_sink)
+                Msg.Dim(format_saved_message(_count, rec_sink.display_target))
+                rec_sink = None
+                _blink_stop, _blink_thread = _swap_monitor(
+                    plotter, _blink_stop, _blink_thread, None,
+                )
+            needs_render = True
+
         if needs_render:
 
             _pbo_img = None
@@ -484,6 +527,9 @@ def render_loop(plotter, buffer) -> None:
                     _perf_n = 0
                     _perf_get_sum = _perf_mode_sum = _perf_render_sum = 0.0
                     _perf_last_log = _now_perf
+            if rec_sink is not None and anim_fired:
+                rec_sink.submit(capture_frame(plotter))
+
             if save_path and anim_fired:
 
                 if pbo_capture is not None and pbo_capture.invalidated:
@@ -586,7 +632,7 @@ def render_loop(plotter, buffer) -> None:
                 plotter._blink_thread_ref = None
             _prev_playing = is_playing
 
-        if save_path is not None and plotter._is_playing:
+        if _saving and plotter._is_playing:
 
             time.sleep(0.0002)
         elif plotter._is_playing:
@@ -606,6 +652,10 @@ def render_loop(plotter, buffer) -> None:
     if sysinfo_stop is not None:
         sysinfo_stop.set()
         plotter._sysinfo_thread.join(timeout=2.0)
+    if rec_sink is not None:
+        _count = _rec_stop(plotter, rec_sink)
+        Msg.Dim(format_saved_message(_count, rec_sink.display_target))
+        rec_sink = None
     if pbo_capture is not None:
         pbo_capture.destroy()
     executor.shutdown(wait=True)

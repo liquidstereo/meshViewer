@@ -60,6 +60,7 @@ _HELP_TEXT = (
     'b          Backface\n'
     'c          Parallel / Perspective\n'
     'Tab        Axis Swap Cycle\n'
+    'Ctrl+R     Record Current Screen\n'
     'F11        Theme Toggle (black/white)\n'
     'F12        Actor Visibility Cycle\n'
     'F1         Front View\n'

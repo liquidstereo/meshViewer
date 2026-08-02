@@ -1,4 +1,4 @@
-from configs.settings_theme import apply_theme as _apply_theme
+from core.theme import apply_theme as _apply_theme
 from configs.settings_font import _font_scale, _set_fontsize, FONT
 from configs.settings_window import WINDOW_WIDTH, WINDOW_HEIGHT
 
@@ -16,6 +16,7 @@ DISPLAY_CAM_DETAILS = False
 DISPLAY_SEQ_ROUND   = True
 
 UI_STATUS_FONT_SIZE     = _set_fontsize(15)
+
 UI_STATUS_LINE_SPACING  = 1.10
 UI_STATUS_COLOR         = _apply_theme('#DADADA')
 UI_STATUS_PAD_PX        = 10
@@ -66,7 +67,7 @@ UI_COLORBAR_LABEL_COLOR     = _apply_theme('#DADADA')
 UI_COLORBAR_NLABELS         = 5
 UI_COLORBAR_BAR_RATIO       = 0.19
 
-SEQ_SIZE_W          = 0.425
+SEQ_SIZE_W          = 0.35
 SEQ_PAD_RIGHT_PX    = 10
 SEQ_PAD_BOTTOM_PX   = 10
 SEQ_IMAGE_EXTS      = ('.png', '.jpg', '.jpeg', '.bmp')

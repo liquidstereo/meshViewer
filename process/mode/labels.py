@@ -14,8 +14,16 @@ FMT_ID_STYLE        = 'ID ({})'
 
 def id_style_label(index: int) -> str:
     return FMT_ID_STYLE.format(ID_STYLE_NAMES[index % len(ID_STYLE_NAMES)])
+
+NORMAL_LIGHT_NAMES  = ('Off', 'On')
+FMT_NORMAL_LIGHT    = 'SURF.NORM ({})'
+
+def normal_light_label(enabled: bool) -> str:
+    return FMT_NORMAL_LIGHT.format(NORMAL_LIGHT_NAMES[bool(enabled)])
 LBL_OUTLINE         = 'OUTLINE (ID.COLOR)'
 LBL_SURF_SMOOTHING  = 'SURF.SMOOTHING'
+
+LBL_REC_CONSOLE     = 'RECORDING CURRENT SCREEN... (PRESS "Ctrl + R" TO STOP)'
 
 SMOOTH_CYCLE_LABELS = (
     'TEX',

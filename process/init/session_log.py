@@ -8,9 +8,12 @@ from configs.settings import (
     STARTUP_AXIS,
     STARTUP_REVERSE_X_AXIS, STARTUP_REVERSE_Y_AXIS, STARTUP_REVERSE_Z_AXIS,
     FLIP_OBJECT_X, FLIP_OBJECT_Y, FLIP_OBJECT_Z,
-    resolve_axis_settings,
 )
-from process.init.settings_log import write_settings_log  # noqa: F401
+from process.init.settings_log import (  # noqa: F401
+    write_settings_log, write_output_settings_log,
+)
+
+from process.plotter.mode_settings import resolve_axis_settings
 
 logger = logging.getLogger(__name__)
 

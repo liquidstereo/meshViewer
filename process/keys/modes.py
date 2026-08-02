@@ -16,13 +16,15 @@ from configs.settings import (
 from process.mode.default import apply_default_reset
 from process.mode.labels import (
     LBL_ISOLINE, LBL_WIREFRAME, LBL_REDUCTION,
-    LBL_SURF_NORMAL, LBL_QUALITY, LBL_VERTICES,
+    LBL_QUALITY, LBL_VERTICES, normal_light_label,
     LBL_FACE_NORMAL, LBL_DEPTH, LBL_EDGE, LBL_OUTLINE,
     LBL_PT_CLOUD_RGB, LBL_PT_CLOUD_WHITE, LBL_PT_CLOUD_DEPTH,
     id_style_label,
 )
 from process.scene.lighting import apply_lighting
-from process.plotter.state import restore_startup_mode
+from process.plotter.state import (
+    restore_startup_mode, apply_mode_entry_state,
+)
 from process.keys import bind_key
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,7 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_isoline = True
-            p._is_backface = False
+            apply_mode_entry_state(p, 'isoline')
             label = LBL_ISOLINE
         else:
             label = restore_startup_mode(p)
@@ -46,7 +48,7 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_wire = True
-            p._wire_mesh_hidden = True
+            apply_mode_entry_state(p, 'wire')
             label = LBL_WIREFRAME
         else:
             if hasattr(p, '_mesh_actor'):
@@ -75,7 +77,9 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_normal_color = True
-            label = LBL_SURF_NORMAL
+            label = normal_light_label(
+                getattr(p, '_normal_color_lighting', False)
+            )
         else:
             label = restore_startup_mode(p)
         set_mode(label)
@@ -124,7 +128,7 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_vtx = True
-            p._vtx_mesh_hidden = False
+            apply_mode_entry_state(p, 'vtx')
             label = LBL_VERTICES
         else:
             label = restore_startup_mode(p)
@@ -137,7 +141,7 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_fnormal = True
-            p._fnormal_mesh_hidden = False
+            apply_mode_entry_state(p, 'face_normal')
             label = LBL_FACE_NORMAL
         else:
             if hasattr(p, '_mesh_actor'):
@@ -187,7 +191,7 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_edge = True
-            p._edge_mesh_hidden = False
+            apply_mode_entry_state(p, 'edge')
             label = LBL_EDGE
         else:
             if hasattr(p, '_mesh_actor'):
@@ -202,7 +206,7 @@ def register(p, trigger, set_mode):
         apply_default_reset(p)
         if not was_on:
             p._is_outline = True
-            p._outline_mesh_hidden = True
+            apply_mode_entry_state(p, 'outline')
             label = LBL_OUTLINE
         else:
             if hasattr(p, '_mesh_actor'):

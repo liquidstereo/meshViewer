@@ -7,15 +7,14 @@ from configs.settings import (
     SHOW_MESH,
     EDGE_FEATURE_ANGLE,
     ISO_COUNT_DEFAULT, REDUCTION_MESH,
-    VTX_SPATIAL_INTERVAL,
+    VTX_SPATIAL_INTERVAL, VTX_LABEL_COLOR,
     PT_CLOUD_SIZE_DEFAULT, PT_CLOUD_SIZE_POINT_WHITE, PT_CLOUD_SIZE_DEPTH,
     STARTUP_MODE, STARTUP_MODE_POINT_CLOUD,
     POINT_FOG,
     NP_STARTUP_MODE_POINT_CLOUD,
     NP_CLOUD_SIZE_DEFAULT, NP_CLOUD_SIZE_POINT_WHITE, NP_CLOUD_SIZE_DEPTH,
     SAVE_EXT, SAVE_QUALITY,
-    DEFAULT_ID_STYLE,
-    resolve_axis_settings,
+    DEFAULT_ID_STYLE, NORMAL_COLOR_ENABLE_LIGHTING,
 )
 from process.mode.labels import (
     SMOOTH_CYCLE_LABELS,
@@ -23,7 +22,7 @@ from process.mode.labels import (
 )
 from process.plotter.mode_settings import (   # noqa: F401
     ID_SHADERS, resolve_mode_axis, resolve_id_style,
-    resolve_id_shader, apply_mode_axes,
+    resolve_id_shader, apply_mode_axes, resolve_axis_settings,
 )
 from process.load.cache_policy import (
     ALL_MODE_TOKEN, effective_startup_mode, startup_mode_override,
@@ -47,6 +46,15 @@ _STARTUP_FLAG_MAP = {
 
 _SHADING_MODE = 'smooth'
 _SHADING_FLAG = '_is_smooth_shading'
+
+MODE_ENTRY_STATE = {
+    'isoline':     {'_is_backface': False},
+    'wire':        {'_wire_mesh_hidden': True},
+    'edge':        {'_edge_mesh_hidden': False},
+    'outline':     {'_outline_mesh_hidden': True},
+    'vtx':         {'_vtx_mesh_hidden': False},
+    'face_normal': {'_fnormal_mesh_hidden': True},
+}
 
 _SMOOTH_STARTUP_MAP = {
     'pbr_tex.tex': 0,
@@ -76,6 +84,10 @@ def expand_all_modes(is_point_cloud: bool) -> list:
 
 def valid_modes_for(is_point_cloud: bool) -> frozenset:
     return PT_STARTUP_MODES if is_point_cloud else MESH_STARTUP_MODES
+
+def apply_mode_entry_state(p, mode: str) -> None:
+    for attr, value in MODE_ENTRY_STATE.get(mode, {}).items():
+        setattr(p, attr, value)
 
 def restore_startup_mode(p) -> str:
     if getattr(p, '_n_faces', 1) == 0:
@@ -121,6 +133,7 @@ def restore_startup_mode(p) -> str:
         flag = _STARTUP_FLAG_MAP.get(mode)
         if flag:
             setattr(p, flag, True)
+            apply_mode_entry_state(p, mode)
             return mode.upper()
     return ''
 
@@ -169,11 +182,13 @@ def _apply_startup_mode(plotter) -> None:
         flag = _STARTUP_FLAG_MAP.get(mode)
         if flag:
             setattr(plotter, flag, True)
+            apply_mode_entry_state(plotter, mode)
 
 def init_plotter_state(plotter, args) -> None:
     plotter._start_time = time.time()
     plotter._input_name = args.input
     plotter._input_path = getattr(args, 'input_path', args.input)
+    plotter._geo_type = getattr(args, '_geo_type', 'mesh')
     plotter._idx = 0
     plotter._save_path = args.save or None
     plotter._save_dir = args.save or None
@@ -208,6 +223,7 @@ def init_plotter_state(plotter, args) -> None:
     plotter._mesh_opacity = 1.0 if SHOW_MESH else 0.0
     plotter._vtx_mesh_hidden = False
     plotter._is_normal_color = False
+    plotter._normal_color_lighting = NORMAL_COLOR_ENABLE_LIGHTING
     plotter._is_mesh_quality = False
     plotter._is_depth = False
     plotter._is_id = False
@@ -217,6 +233,7 @@ def init_plotter_state(plotter, args) -> None:
     plotter._id_style = resolve_id_style(DEFAULT_ID_STYLE)
     plotter._is_vtx = False
     plotter._vtx_spatial_interval = VTX_SPATIAL_INTERVAL
+    plotter._vtx_label_color = VTX_LABEL_COLOR
     plotter._is_fnormal = False
     plotter._fnormal_mesh_hidden = True
     plotter._is_edge = False

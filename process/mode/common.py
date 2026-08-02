@@ -4,7 +4,7 @@ import pyvista as pv
 import matplotlib.cm as cm
 from vtk.util.numpy_support import numpy_to_vtk, get_numpy_array_type
 
-from configs.settings_font import resolve_font_file
+from core.font import resolve_font_file
 from configs.settings import COLOR_BG, FONT_PRIORITY, OFFSET_MESH_BACK
 
 def _get_cam_dir(plotter) -> np.ndarray:

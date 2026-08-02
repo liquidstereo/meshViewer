@@ -9,7 +9,7 @@ from process.init.shutdown import graceful_shutdown
 from process.mode.default import apply_default_reset
 from process.plotter.state import (
     _STARTUP_FLAG_MAP, _SMOOTH_STARTUP_MAP, valid_modes_for,
-    ALL_MODE_TOKEN, expand_all_modes,
+    ALL_MODE_TOKEN, expand_all_modes, apply_mode_entry_state,
 )
 from process.overlay import init_sysinfo_monitor
 from process.render.loop import render_loop
@@ -22,20 +22,19 @@ def _apply_mode(plotter, mode: str) -> None:
     apply_default_reset(plotter)
     idx = _SMOOTH_STARTUP_MAP.get(mode)
     if idx is not None:
-        plotter._is_smooth = True
+        fn = getattr(plotter, '_apply_smooth_cycle', None)
+        if fn is None:
+            raise RuntimeError(
+                'batch: _apply_smooth_cycle is not registered'
+                f' - cannot enter {mode} with the same state as the 4 key'
+            )
         plotter._smooth_cycle = idx
-        if idx == 0:
-            plotter._is_tex = True
-        elif idx == 1:
-            plotter._is_lighting = True
-        else:
-            plotter._is_lighting = True
-            plotter._is_tex = True
-            plotter._pbr_with_tex = True
+        fn(idx)
         return
     flag = _STARTUP_FLAG_MAP.get(mode)
     if flag:
         setattr(plotter, flag, True)
+        apply_mode_entry_state(plotter, mode)
 
 def resolve_batch_modes(plotter, modes) -> list:
     is_pc = getattr(plotter, '_n_faces', 1) == 0

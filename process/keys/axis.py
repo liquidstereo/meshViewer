@@ -3,12 +3,14 @@ from configs.settings import (
     HDRI_ROT_STEP, VTX_SPATIAL_INTERVAL, VTX_SPATIAL_STEP,
     PT_CLOUD_SIZE_STEP, PT_CLOUD_SIZE_MIN, PT_CLOUD_SIZE_MAX,
     NP_CLOUD_SIZE_STEP, NP_CLOUD_SIZE_MIN, NP_CLOUD_SIZE_MAX,
+    NORMAL_COLOR_ENABLE_LIGHTING,
 )
 from configs.keybinding import (
     KEY_INC, KEY_DEC, KEY_AXIS_NEXT, KEY_AXIS_PREV,
 )
 from process.mode.labels import (
     SMOOTH_CYCLE_LABELS, AXIS_NAMES, ID_STYLE_NAMES, id_style_label,
+    normal_light_label,
     FMT_HDRI_ROT, FMT_EDGE_ANGLE, FMT_ISO_COUNT,
     FMT_VTX_INTERVAL, FMT_MESH_RED, FMT_PT_SIZE,
     FMT_ISO_AXIS, FMT_DEPTH_AXIS, FMT_WIRE_AXIS, FMT_NORMAL_AXIS,
@@ -123,6 +125,7 @@ def register(p, trigger, set_mode, apply_smooth_cycle):
             or getattr(p, '_is_wire', False)
             or getattr(p, '_is_fnormal', False)
             or getattr(p, '_is_id', False)
+            or getattr(p, '_is_normal_color', False)
         )
 
     def _cycle_axis(delta):
@@ -147,6 +150,14 @@ def register(p, trigger, set_mode, apply_smooth_cycle):
                 getattr(p, '_fnormal_axis', 3) + delta
             ) % 4
             set_mode(FMT_NORMAL_AXIS.format(AXIS_NAMES[p._fnormal_axis]))
+            trigger()
+        elif getattr(p, '_is_normal_color', False):
+
+            p._normal_color_lighting = not getattr(
+                p, '_normal_color_lighting', NORMAL_COLOR_ENABLE_LIGHTING,
+            )
+            p._prev_mode = None
+            set_mode(normal_light_label(p._normal_color_lighting))
             trigger()
         elif getattr(p, '_is_id', False):
 

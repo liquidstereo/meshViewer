@@ -1,4 +1,4 @@
-from configs.settings_theme import (           # noqa: F401
+from core.theme import (                     # noqa: F401
     apply_theme, make_fontsize_fn,
 )
 from configs.system_resources import (  # noqa: F401
@@ -18,7 +18,7 @@ from configs.settings_point_cloud import *   # noqa: F401, F403
 from configs.settings_audio import *         # noqa: F401, F403
 from configs.settings_np_data import *       # noqa: F401, F403
 
-from configs.settings_theme import apply_theme as _apply_theme  # noqa: F401
+from core.theme import apply_theme as _apply_theme  # noqa: F401
 from configs.settings_font import (      # noqa: F401
     _font_scale, _set_fontsize,
 )
@@ -59,6 +59,10 @@ SAVE_JPEG_QUALITY       = 80
 SAVE_ALPHA              = False
 SAVE_PBO_ENABLED        = True
 
+SAVE_SETTING_LOG        = False
+
+SAVE_LIVE_PREFIX        = 'liveRec_'
+
 SAVE_ENCODE_WORKERS     = get_usable_cpu(2, 0.80)
 
 AVOID_NAME_COLLISION    = True
@@ -88,57 +92,3 @@ SAVE_QUALITY_PRESETS    = {
 
 LOG_FORMAT      = '%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d - %(message)s'
 LOG_MSEC_FORMAT = '%s.%03d'
-
-def resolve_axis_settings(file_type: str) -> tuple:
-    _overrides = {
-        'mesh': (
-            MESH_STARTUP_AXIS,
-            MESH_STARTUP_REVERSE_X_AXIS,
-            MESH_STARTUP_REVERSE_Y_AXIS,
-            MESH_STARTUP_REVERSE_Z_AXIS,
-            MESH_FLIP_OBJECT_X,
-            MESH_FLIP_OBJECT_Y,
-            MESH_FLIP_OBJECT_Z,
-        ),
-        'point_cloud': (
-            PT_STARTUP_AXIS,
-            PT_STARTUP_REVERSE_X_AXIS,
-            PT_STARTUP_REVERSE_Y_AXIS,
-            PT_STARTUP_REVERSE_Z_AXIS,
-            PT_FLIP_OBJECT_X,
-            PT_FLIP_OBJECT_Y,
-            PT_FLIP_OBJECT_Z,
-        ),
-        'np_data': (
-            NP_STARTUP_AXIS,
-            NP_STARTUP_REVERSE_X_AXIS,
-            NP_STARTUP_REVERSE_Y_AXIS,
-            NP_STARTUP_REVERSE_Z_AXIS,
-            NP_FLIP_OBJECT_X,
-            NP_FLIP_OBJECT_Y,
-            NP_FLIP_OBJECT_Z,
-        ),
-        'audio': (
-            AUDIO_STARTUP_AXIS,
-            AUDIO_STARTUP_REVERSE_X_AXIS,
-            AUDIO_STARTUP_REVERSE_Y_AXIS,
-            AUDIO_STARTUP_REVERSE_Z_AXIS,
-            AUDIO_FLIP_OBJECT_X,
-            AUDIO_FLIP_OBJECT_Y,
-            AUDIO_FLIP_OBJECT_Z,
-        ),
-    }
-    _defaults = (
-        STARTUP_AXIS,
-        STARTUP_REVERSE_X_AXIS,
-        STARTUP_REVERSE_Y_AXIS,
-        STARTUP_REVERSE_Z_AXIS,
-        FLIP_OBJECT_X,
-        FLIP_OBJECT_Y,
-        FLIP_OBJECT_Z,
-    )
-    overrides = _overrides.get(file_type, (None,) * 7)
-    return tuple(
-        o if o is not None else d
-        for o, d in zip(overrides, _defaults)
-    )

@@ -11,6 +11,9 @@ from process.record import (
     VideoWriter, is_video_ext, resolve_output_path,
 )
 from process.window.display import save_frame_to_disk
+from process.init.settings_log import (
+    write_output_settings_log, SETTINGS_LOG_SUFFIX,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,22 @@ class FrameSink:
         return self._target
 
     @property
+    def output_dir(self) -> str:
+        if self._is_video:
+            return os.path.dirname(self._target) or '.'
+        return self._img_dir
+
+    @property
+    def settings_log_path(self) -> str:
+        if self._is_video:
+            stem = os.path.splitext(os.path.basename(self._target))[0]
+        else:
+            stem = self._stem
+        return os.path.join(
+            self.output_dir, f'{stem}{SETTINGS_LOG_SUFFIX}',
+        )
+
+    @property
     def display_target(self) -> str:
         if self._is_video:
             return self._target
@@ -80,7 +99,8 @@ class FrameSink:
             self._writer = None
 
 def resolve_stem(plotter) -> str:
-    stem = getattr(plotter, '_input_name', 'frame')
+    prefix = getattr(plotter, '_save_prefix', '')
+    stem = f"{prefix}{getattr(plotter, '_input_name', 'frame')}"
     if not SAVE_MODE_FILENAME:
         return stem
     from process.plotter.state import current_mode_name
@@ -102,6 +122,7 @@ def create_sink(plotter, save_path: str, executor) -> FrameSink:
         sink.target, TARGET_ANIM_FPS,
         getattr(plotter, '_save_quality', SAVE_QUALITY), width, height,
     )
+    write_output_settings_log(plotter, sink.settings_log_path)
     return sink
 
 SAVED_TARGET_MAX_CHARS = 200

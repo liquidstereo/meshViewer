@@ -1,4 +1,4 @@
-from configs.settings_theme import apply_theme as _apply_theme
+from core.theme import apply_theme as _apply_theme
 from configs.settings_font import _set_fontsize
 
 HDRI_PATH   = './assets/hdri/pav_studio_03_4k.hdr'
@@ -70,9 +70,9 @@ ID_COLOR_PALETTE = (
     '#bcf60c', '#fabebe', '#008080', '#9a6324',
 )
 
-DEFAULT_ID_STYLE  = 'shaded'
+DEFAULT_ID_STYLE  = 'flat'
 
-DEFAULT_ID_SHADER = 'default'
+DEFAULT_ID_SHADER = 'pbr'
 
 WIDTH_OUTLINE            = 2.0
 

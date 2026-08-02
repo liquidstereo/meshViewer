@@ -9,11 +9,14 @@ from configs.settings import (
     ISO_COUNT_DEFAULT, REDUCTION_MESH,
     EDGE_FEATURE_ANGLE, VTX_SPATIAL_INTERVAL,
     OUTPUT_DIR_ROOT, SCREENSHOT_SUBDIR, SCREENSHOT_EXT,
-    CAM_ZOOM_STEP, CAM_TRUCK_STEP, DEFAULT_ID_STYLE,
+    CAM_ZOOM_STEP, CAM_TRUCK_STEP, DEFAULT_ID_STYLE, VTX_LABEL_COLOR,
+    NORMAL_COLOR_ENABLE_LIGHTING,
 )
-import configs.settings_theme as _theme_mod
+import core.theme as _theme_mod
+from core.theme import invert_hex
 
 from configs.keybinding import (
+    KEY_RECORD,
     TURNTABLE_ROT_STEP,
     KEY_RESET_GROUP, KEY_CAM_RESET, KEY_CENTER_VIEW, KEY_CAM_PROJ, KEY_MESH_DEFAULT,
     KEY_SCREENSHOT, KEY_GRID, KEY_GRID_ONLY, KEY_TURNTABLE, KEY_HELP,
@@ -47,6 +50,7 @@ from process.init.shutdown import graceful_shutdown
 from process.scene.grid import setup_grid
 from process.window.display import save_screenshot
 from process.mode.default import apply_default_reset
+from process.mode.common import _hex_to_rgb
 from process.plotter.state import apply_mode_axes, resolve_id_style
 from process.scene.lighting import apply_lighting
 from process.window.toggle_info import toggle_info_overlay
@@ -54,6 +58,7 @@ from process.camera.utils import (
     restore_initial_camera, set_parallel_projection,
 )
 from process.keys import bind_key, dispatch_key
+from process.render.live_record import request_toggle
 
 logger = logging.getLogger(__name__)
 _MAX_ELEVATION = 85.0
@@ -83,6 +88,15 @@ def _invert_grid_colors(ax):
             prop.SetColor(*_invert_color(*prop.GetColor()))
     ax.Modified()
 
+_THEME_REVERSED_LUTS = (
+    '_depth_lut', '_pt_depth_lut', '_iso_lut', '_wire_lut',
+)
+
+def _recolor_vtx_labels(p) -> None:
+    rgb = _hex_to_rgb(getattr(p, '_vtx_label_color', VTX_LABEL_COLOR))
+    for actor in getattr(p, '_vtx_text_actors', ()):
+        actor.GetTextProperty().SetColor(*rgb)
+
 def _apply_theme_toggle(p):
     _theme_mod.toggle_theme()
     p.renderer.SetBackground(
@@ -111,15 +125,18 @@ def _apply_theme_toggle(p):
     if mapper is not None and not mapper.GetScalarVisibility():
         prop = p._mesh_actor.GetProperty()
         prop.SetColor(*_invert_color(*prop.GetColor()))
-    for attr in (
-        '_depth_lut', '_pt_depth_lut', '_iso_lut',
-        '_wire_lut', '_quality_lut',
-    ):
+
+    for attr in _THEME_REVERSED_LUTS:
         lut = getattr(p, attr, None)
         if lut is not None:
             _reverse_lut(lut)
+
+    p._vtx_label_color = invert_hex(
+        getattr(p, '_vtx_label_color', VTX_LABEL_COLOR)
+    )
+    _recolor_vtx_labels(p)
     p._prev_mode = None
-    logger.info('Theme toggled: %s', _theme_mod.THEME)
+    logger.info('Theme toggled: %s', _theme_mod.current_theme())
     p._needs_update = True
 
 def register_cam_pan(p, trigger, set_mode) -> None:
@@ -155,6 +172,11 @@ def register_cam_pan(p, trigger, set_mode) -> None:
         cam.SetFocalPoint(*(focal + up))
         p.renderer.ResetCameraClippingRange()
         trigger()
+
+    dispatch_key(
+        p._ctrl_key_dispatch, KEY_RECORD,
+        lambda: request_toggle(p),
+    )
 
     dispatch_key(
         p._ctrl_key_dispatch, KEY_TRUCK_L,
@@ -200,6 +222,7 @@ def register(p, trigger, set_mode, total_len):
         p._quality_cache_range = None
         p._quality_vtk_poly = None
         p._is_depth = False
+        p._normal_color_lighting = NORMAL_COLOR_ENABLE_LIGHTING
         p._is_id = False
         p._id_region_key = None
         p._id_colors = None

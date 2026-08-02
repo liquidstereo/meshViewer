@@ -20,7 +20,7 @@ from configs.settings import (
     AUDIO_ISO_COUNT_DEFAULT, STARTUP_AUDIO_MODE,
     STARTUP_CAM_AZIMUTH, STARTUP_CAM_ELEVATION,
     STARTUP_TRUCK, STARTUP_PEDESTAL, STARTUP_DOLLY,
-    SAVE_PBO_ENABLED, DISPLAY_SEQUENCE,
+    DISPLAY_SEQUENCE,
 )
 from configs.colorize import Msg
 from process.init import init_vtk, log_session_start  # noqa: F401
@@ -143,14 +143,11 @@ def register_keys(plotter, total: int) -> None:
     logger.debug('register_callbacks: %.4fs', time.perf_counter() - t)
 
 def setup_window(plotter) -> None:
+
     apply_lighting(plotter)
     setup_hdri(plotter)
     if getattr(plotter, '_is_smooth', False):
         enable_hdri(plotter)
-    if (getattr(plotter, '_save_path', None) and SAVE_PBO_ENABLED
-            and not getattr(plotter, '_headless', False)):
-        plotter.render_window.SetMultiSamples(0)
-        logger.debug('setup_window: MSAA disabled for PBO capture')
     hide_loading()
 
 def pre_warm_first_frame(plotter, buffer) -> None:
